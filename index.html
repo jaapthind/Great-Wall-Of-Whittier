@@ -1,1825 +1,1226 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Great Wall Of Whittier Prince</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>MilesMars — Mars Adventure (Prototype)</title>
+<meta name="description" content="MilesMars — third-person Mars adventure prototype built with Three.js" />
+<!-- Three.js and supporting libs from CDN -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.154.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.154.0/examples/js/controls/PointerLockControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.154.0/examples/js/libs/stats.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/simplex-noise@4.0.1/simplex-noise.min.js"></script>
 <style>
-/* ========================================================================================================================
-   GLOBAL RESET & BASE STYLES
-   ======================================================================================================================== */
-*, 
-*::before, 
-*::after { 
-    box-sizing: border-box; 
-    margin: 0; 
-    padding: 0; 
-    user-select: none; 
-    -webkit-user-drag: none; 
-}
+  :root{
+    --ui-bg: rgba(10,10,12,0.6);
+    --accent: #ff6f3c;
+    --text: #f3f3f3;
+    --muted: #cfcfcf;
+    --glass: rgba(255,255,255,0.03);
+  }
+  html,body{
+    height:100%;
+    margin:0;
+    font-family: Inter, Roboto, Arial, sans-serif;
+    background:#000;
+    color:var(--text);
+    -webkit-font-smoothing:antialiased;
+    -moz-osx-font-smoothing:grayscale;
+  }
+  #game {
+    position:fixed;
+    inset:0;
+    overflow:hidden;
+    display:flex;
+    flex-direction:column;
+  }
+  canvas { display:block; width:100%; height:100%; }
 
-html, 
-body { 
-    width: 100vw; 
-    height: 100vh; 
-    overflow: hidden; 
-    background-color: #000000; 
-    font-family: 'Courier New', Courier, monospace; 
-    color: #FFFFFF; 
-    touch-action: none; 
-}
-
-/* ========================================================================================================================
-   RENDER PIPELINE LAYERS (HARDWARE ACCELERATED)
-   ======================================================================================================================== */
-#engine-core { 
-    position: relative; 
-    width: 100%; 
-    height: 100%; 
-    perspective: 1000px; 
-    background: #000000; 
-    overflow: hidden; 
-}
-
-.render-layer { 
-    position: absolute; 
-    top: 0; 
-    left: 0; 
-    width: 100%; 
-    height: 100%; 
-    transform: translateZ(0); 
-    will-change: transform, opacity; 
-}
-
-#layer-space { z-index: 1; }
-#layer-sky { z-index: 2; }
-#layer-valley { z-index: 3; }
-#layer-wall { z-index: 4; }
-#layer-particles { z-index: 5; pointer-events: none; }
-#layer-fx { z-index: 6; pointer-events: none; }
-#layer-ui { z-index: 10; pointer-events: none; }
-
-/* ========================================================================================================================
-   POST PROCESSING SHADERS (CSS DOM IMPLEMENTATION)
-   ======================================================================================================================== */
-.post-process { 
-    position: absolute; 
-    top: 0; 
-    left: 0; 
-    width: 100%; 
-    height: 100%; 
-    pointer-events: none; 
-}
-
-#fx-vignette { 
-    background: radial-gradient(circle at center, transparent 30%, rgba(0,0,0,0.98) 100%); 
-    z-index: 20; 
-}
-
-#fx-scanlines { 
-    background: linear-gradient(
-        to bottom, 
-        rgba(255,255,255,0), 
-        rgba(255,255,255,0) 50%, 
-        rgba(0,0,0,0.2) 50%, 
-        rgba(0,0,0,0.2)
-    ); 
-    background-size: 100% 4px; 
-    z-index: 21; 
-    opacity: 0.5; 
-}
-
-#fx-damage { 
-    background: radial-gradient(circle at center, rgba(255,0,0,0) 20%, rgba(255,0,0,0.85) 100%); 
-    z-index: 22; 
-    opacity: 0; 
-    transition: opacity 0.1s ease-out; 
-}
-
-#fx-speed { 
-    z-index: 19; 
-    opacity: 0; 
-    background-image: radial-gradient(circle, transparent 20%, rgba(255,255,255,0.15) 90%); 
-    transition: opacity 0.1s; 
-}
-
-/* ========================================================================================================================
-   SYSTEM BOOT / ACTIVATION OVERLAY (FIXED ACTIVATION BUG)
-   ======================================================================================================================== */
-#activation-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 999999;
-    background: rgba(0, 0, 0, 0.95);
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    cursor: pointer;
-}
-
-.activation-text {
-    font-size: 3vw;
-    color: #00FFFF;
-    text-shadow: 0 0 20px #00FFFF;
-    letter-spacing: 0.5vw;
-    animation: flash 1.5s infinite;
-    text-align: center;
-    padding: 40px;
-    border: 2px solid #00FFFF;
-    background: rgba(0, 255, 255, 0.1);
-}
-
-@keyframes flash { 
-    0%, 100% { opacity: 0.3; transform: scale(0.98); } 
-    50% { opacity: 1; transform: scale(1.02); } 
-}
-
-/* ========================================================================================================================
-   GAMEPLAY HUD (HEADS UP DISPLAY)
-   ======================================================================================================================== */
-#hud-container { 
-    position: absolute; 
-    top: 0; 
-    left: 0; 
-    width: 100%; 
-    height: 100%; 
-    z-index: 40; 
-    display: none; 
-    pointer-events: none; 
-}
-
-.hud-header { 
-    position: absolute; 
-    top: 0; 
-    left: 0; 
-    width: 100%; 
-    padding: 20px 40px; 
-    display: flex; 
-    justify-content: space-between; 
-    align-items: flex-start; 
-    background: linear-gradient(to bottom, rgba(0,0,0,0.95), transparent); 
-}
-
-.hud-panel { 
-    background: rgba(10, 15, 20, 0.85); 
-    border: 1px solid #334455; 
-    padding: 15px 30px; 
-    border-radius: 4px; 
-    border-left: 5px solid #FFAA00; 
-    box-shadow: 0 5px 20px rgba(0,0,0,0.6); 
-}
-
-.hud-label { 
-    font-size: 12px; 
-    color: #8899AA; 
-    margin-bottom: 5px; 
-    font-weight: bold; 
-    letter-spacing: 1px; 
-}
-
-.hud-value { 
-    font-size: 36px; 
-    font-weight: 900; 
-    color: #FFFFFF; 
-    text-shadow: 0 0 15px rgba(255,255,255,0.4); 
-}
-
-.hud-unit { 
-    font-size: 16px; 
-    color: #667788; 
-}
-
-.status-matrix { 
-    display: flex; 
-    flex-direction: column; 
-    gap: 12px; 
-    width: 350px; 
-}
-
-.bar-wrap { 
-    width: 100%; 
-    height: 24px; 
-    background: #111111; 
-    border: 2px solid #333333; 
-    position: relative; 
-}
-
-.bar-fill { 
-    height: 100%; 
-    width: 100%; 
-    transition: width 0.1s linear, background-color 0.2s; 
-}
-
-#hp-bar { 
-    background: #00FF55; 
-    box-shadow: 0 0 12px #00FF55; 
-}
-
-#st-bar { 
-    background: #00AAFF; 
-    box-shadow: 0 0 12px #00AAFF; 
-}
-
-#lane-tracker { 
-    position: absolute; 
-    bottom: 50px; 
-    left: 50%; 
-    transform: translateX(-50%); 
-    display: flex; 
-    gap: 40px; 
-    background: rgba(0,0,0,0.8); 
-    padding: 20px 50px; 
-    border-radius: 50px; 
-    border: 2px solid #444444; 
-}
-
-.lane-dot { 
-    width: 40px; 
-    height: 15px; 
-    background: #222222; 
-    border-radius: 10px; 
-    transition: all 0.15s cubic-bezier(0.2, 1.5, 0.5, 1); 
-}
-
-.lane-dot.active { 
-    background: #FFAA00; 
-    box-shadow: 0 0 25px #FFAA00; 
-    transform: scale(1.4); 
-}
-
-#warning-prompt { 
-    position: absolute; 
-    top: 60%; 
-    left: 50%; 
-    transform: translate(-50%, -50%); 
-    font-size: 48px; 
-    color: #FF2222; 
-    text-shadow: 0 0 20px #FF0000; 
-    font-weight: 900; 
-    opacity: 0; 
-    transition: opacity 0.1s; 
-    letter-spacing: 5px; 
-}
-
-/* ========================================================================================================================
-   MENUS & INTERFACES
-   ======================================================================================================================== */
-.menu-screen { 
-    position: absolute; 
-    top: 0; 
-    left: 0; 
-    width: 100%; 
-    height: 100%; 
-    z-index: 100; 
-    display: flex; 
-    flex-direction: column; 
-    justify-content: center; 
-    align-items: center; 
-    background: rgba(5, 5, 5, 0.9); 
-    backdrop-filter: blur(10px); 
-    pointer-events: auto; 
-}
-
-#menu-main { 
-    display: none; 
-}
-
-#menu-death { 
-    display: none; 
-    background: rgba(25, 0, 0, 0.95); 
-}
-
-.menu-title { 
-    font-size: 7vw; 
-    font-weight: 900; 
-    color: #FFAA00; 
-    text-transform: uppercase; 
-    text-shadow: 5px 5px 0px #883300, 0 0 50px rgba(255, 170, 0, 0.4); 
-    margin-bottom: 10px; 
-    text-align: center; 
-    line-height: 1; 
-}
-
-.menu-sub { 
-    font-size: 2vw; 
-    color: #8899AA; 
-    letter-spacing: 0.5vw; 
-    margin-bottom: 60px; 
-    text-transform: uppercase; 
-}
-
-.btn { 
-    background: linear-gradient(180deg, #222222, #050505); 
-    border: 3px solid #FFAA00; 
-    color: #FFAA00; 
-    font-family: 'Courier New', Courier, monospace; 
-    font-size: 32px; 
-    font-weight: bold; 
-    padding: 25px 80px; 
-    cursor: pointer; 
-    text-transform: uppercase; 
-    letter-spacing: 4px; 
-    position: relative; 
-    overflow: hidden; 
-    transition: all 0.2s; 
-    box-shadow: 0 15px 40px rgba(0,0,0,0.9); 
-}
-
-.btn:hover { 
-    background: #FFAA00; 
-    color: #000000; 
-    box-shadow: 0 0 40px #FFAA00; 
-    transform: scale(1.05); 
-}
-
-.btn:active { 
-    transform: scale(0.95); 
-}
-
-.controls-card { 
-    margin-top: 80px; 
-    background: rgba(0,0,0,0.7); 
-    border: 2px solid #333333; 
-    padding: 40px 60px; 
-    border-radius: 8px; 
-    display: grid; 
-    grid-template-columns: 1fr; 
-    gap: 20px; 
-    text-align: left; 
-}
-
-.ctrl-row { 
-    font-size: 20px; 
-    color: #BBBBBB; 
-    display: flex; 
-    justify-content: space-between; 
-    gap: 40px; 
-    border-bottom: 1px solid #222222; 
-    padding-bottom: 10px; 
-}
-
-.ctrl-key { 
-    color: #00FFFF; 
-    font-weight: bold; 
-}
-
-.death-board { 
-    background: rgba(0,0,0,0.9); 
-    border: 3px solid #FF2222; 
-    padding: 50px 100px; 
-    text-align: center; 
-    margin-bottom: 60px; 
-    box-shadow: 0 0 40px rgba(255,0,0,0.2); 
-}
-
+  /* HUD */
+  #hud {
+    position:absolute;
+    left:16px;
+    top:16px;
+    width:320px;
+    padding:12px;
+    background:var(--ui-bg);
+    border-radius:10px;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+    z-index:10;
+  }
+  #hud h1{
+    margin:0 0 8px 0;
+    font-size:16px;
+    letter-spacing:0.6px;
+  }
+  #hud .row{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:8px;
+    margin:6px 0;
+  }
+  .meter {
+    height:10px;
+    background:rgba(255,255,255,0.06);
+    border-radius:6px;
+    overflow:hidden;
+    flex:1;
+  }
+  .meter > i {
+    display:block;
+    height:100%;
+    background:linear-gradient(90deg,var(--accent),#ffb07a);
+    width:50%;
+  }
+  #minimap {
+    position:absolute;
+    right:16px;
+    top:16px;
+    width:220px;
+    height:220px;
+    background:var(--ui-bg);
+    border-radius:10px;
+    padding:8px;
+    z-index:10;
+  }
+  #log {
+    position:absolute;
+    left:16px;
+    bottom:16px;
+    width:420px;
+    max-height:220px;
+    overflow:auto;
+    padding:10px;
+    background:linear-gradient(180deg, rgba(0,0,0,0.45), rgba(0,0,0,0.25));
+    border-radius:10px;
+    z-index:10;
+    font-size:13px;
+  }
+  #controls {
+    position:absolute;
+    right:16px;
+    bottom:16px;
+    width:320px;
+    padding:12px;
+    background:var(--ui-bg);
+    border-radius:10px;
+    z-index:10;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .btn {
+    background:linear-gradient(180deg,#222,#111);
+    border:1px solid rgba(255,255,255,0.04);
+    color:var(--text);
+    padding:8px 10px;
+    border-radius:8px;
+    cursor:pointer;
+    font-size:13px;
+  }
+  .btn.secondary {
+    background:transparent;
+    border:1px solid rgba(255,255,255,0.06);
+    color:var(--muted);
+  }
+  #splash {
+    position:absolute;
+    inset:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:20;
+    pointer-events:none;
+  }
+  #splash .panel {
+    pointer-events:auto;
+    width:720px;
+    max-width:calc(100% - 40px);
+    padding:28px;
+    background:linear-gradient(180deg, rgba(8,8,10,0.9), rgba(6,6,8,0.85));
+    border-radius:14px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.7);
+    text-align:left;
+  }
+  #splash h2 { margin:0 0 8px 0; font-size:22px; }
+  #splash p { margin:0 0 16px 0; color:var(--muted); }
+  #splash .actions { display:flex; gap:8px; }
+  #credits {
+    position:absolute;
+    left:50%;
+    transform:translateX(-50%);
+    bottom:8px;
+    color:rgba(255,255,255,0.06);
+    font-size:12px;
+    z-index:5;
+  }
+  /* mission markers */
+  .marker {
+    position:absolute;
+    transform:translate(-50%,-50%);
+    pointer-events:none;
+    z-index:11;
+  }
+  .marker .dot {
+    width:14px;
+    height:14px;
+    border-radius:50%;
+    background:var(--accent);
+    box-shadow:0 0 12px rgba(255,111,60,0.9);
+  }
+  /* simple responsive */
+  @media (max-width:900px){
+    #hud { width:260px; }
+    #minimap { width:160px; height:160px; }
+    #controls { width:260px; }
+  }
 </style>
 </head>
 <body>
+<div id="game">
+  <canvas id="c"></canvas>
 
-<div id="engine-core">
-    
-    <canvas id="layer-space" class="render-layer"></canvas>
-    <canvas id="layer-sky" class="render-layer"></canvas>
-    <canvas id="layer-valley" class="render-layer"></canvas>
-    <canvas id="layer-wall" class="render-layer"></canvas>
-    <canvas id="layer-particles" class="render-layer"></canvas>
-
-    <div id="fx-speed" class="post-process"></div>
-    <div id="fx-scanlines" class="post-process"></div>
-    <div id="fx-vignette" class="post-process"></div>
-    <div id="fx-damage" class="post-process"></div>
-
-    <div id="activation-overlay">
-        <div class="activation-text">
-            [ SYSTEM READY ]<br><br>
-            CLICK ANYWHERE OR PRESS SPACE<br>
-            TO INITIALIZE PROTOCOL
-        </div>
+  <div id="hud" aria-hidden="false">
+    <h1>MilesMars</h1>
+    <div class="row">
+      <div style="font-size:13px">Health</div>
+      <div class="meter" style="width:160px"><i id="healthBar"></i></div>
+      <div id="healthText" style="width:48px;text-align:right;font-size:13px">100%</div>
     </div>
-
-    <div id="hud-container">
-        <div class="hud-header">
-            <div class="status-matrix">
-                <div class="hud-label">STRUCTURAL INTEGRITY [HP]</div>
-                <div class="bar-wrap">
-                    <div class="bar-fill" id="hp-bar"></div>
-                </div>
-                <div class="hud-label" style="margin-top: 15px;">EXHAUSTION LIMIT [ST]</div>
-                <div class="bar-wrap">
-                    <div class="bar-fill" id="st-bar"></div>
-                </div>
-            </div>
-            
-            <div style="display:flex; gap: 40px;">
-                <div class="hud-panel">
-                    <div class="hud-label">VELOCITY</div>
-                    <div class="hud-value" id="hud-vel">000 <span class="hud-unit">KM/H</span></div>
-                </div>
-                <div class="hud-panel">
-                    <div class="hud-label">DISTANCE</div>
-                    <div class="hud-value" id="hud-dist">00000 <span class="hud-unit">M</span></div>
-                </div>
-            </div>
-        </div>
-        
-        <div id="lane-tracker">
-            <div class="lane-dot" id="dot-0"></div>
-            <div class="lane-dot active" id="dot-1"></div>
-            <div class="lane-dot" id="dot-2"></div>
-        </div>
-        
-        <div id="warning-prompt">EVADE!</div>
+    <div class="row">
+      <div style="font-size:13px">Oxygen</div>
+      <div class="meter" style="width:160px"><i id="oxyBar" style="background:linear-gradient(90deg,#6fd6ff,#2aa6ff)"></i></div>
+      <div id="oxyText" style="width:48px;text-align:right;font-size:13px">100%</div>
     </div>
-
-    <div id="menu-main" class="menu-screen">
-        <div class="menu-title">THE GREAT WALL</div>
-        <div class="menu-sub">HIGH-VELOCITY 3D ENDURANCE PROTOCOL</div>
-        
-        <button class="btn" id="btn-deploy">INITIATE RUN</button>
-        
-        <div class="controls-card">
-            <div class="ctrl-row">
-                <span class="ctrl-key">[A] / [LEFT ARROW]</span> 
-                <span>SHIFT LANE LEFT</span>
-            </div>
-            <div class="ctrl-row">
-                <span class="ctrl-key">[D] / [RIGHT ARROW]</span> 
-                <span>SHIFT LANE RIGHT</span>
-            </div>
-            <div class="ctrl-row">
-                <span class="ctrl-key">[W] / [UP ARROW]</span> 
-                <span>SPRINT (DRAINS STAMINA)</span>
-            </div>
-            <div class="ctrl-row">
-                <span class="ctrl-key">[S] / [DOWN ARROW]</span> 
-                <span>BRAKE / COAST</span>
-            </div>
-            <div class="ctrl-row">
-                <span class="ctrl-key">[SPACE]</span> 
-                <span>JUMP OVER OBSTACLES</span>
-            </div>
-        </div>
+    <div class="row">
+      <div style="font-size:13px">Mission</div>
+      <div style="flex:1;text-align:right;font-size:13px;color:var(--muted)" id="missionTitle">Initializing...</div>
     </div>
+  </div>
 
-    <div id="menu-death" class="menu-screen">
-        <div class="menu-title" style="color: #FF2222;">MISSION FAILED</div>
-        <div class="menu-sub" style="color: #FF8888;">CATASTROPHIC STRUCTURAL FAILURE</div>
-        
-        <div class="death-board">
-            <div class="hud-label" style="color:#FFFFFF;">FINAL DISTANCE ACHIEVED</div>
-            <div class="hud-value" id="death-score" style="font-size: 80px;">
-                00000 <span class="hud-unit" style="color:#FFFFFF;">M</span>
-            </div>
-        </div>
-        
-        <button class="btn" id="btn-retry" style="border-color: #FF2222; color: #FF2222;">REDEPLOY</button>
+  <div id="minimap" aria-hidden="false">
+    <canvas id="mini" width="200" height="200" style="width:100%;height:100%;border-radius:6px;background:transparent"></canvas>
+  </div>
+
+  <div id="log" aria-live="polite"></div>
+
+  <div id="controls">
+    <div style="display:flex;gap:8px">
+      <button class="btn" id="startBtn">Start Mission</button>
+      <button class="btn secondary" id="resetBtn">Reset</button>
     </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn secondary" id="toggleWire">Wireframe</button>
+      <button class="btn secondary" id="toggleDebug">Debug</button>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" id="saveBtn">Save</button>
+      <button class="btn secondary" id="loadBtn">Load</button>
+    </div>
+    <div style="margin-top:8px;color:var(--muted);font-size:13px">Controls: WASD to move, Space to jump, Mouse to look, E to interact</div>
+  </div>
 
+  <div id="splash">
+    <div class="panel" id="splashPanel">
+      <h2>MilesMars — Mars Adventure Prototype</h2>
+      <p>Third-person exploration on a procedurally generated Martian terrain. Complete missions, manage oxygen, and discover artifacts.</p>
+      <div class="actions">
+        <button class="btn" id="splashStart">Play</button>
+        <button class="btn secondary" id="splashLearn">How to Play</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="credits">Prototype — MilesMars</div>
 </div>
 
 <script>
-/**
- * ========================================================================================================================
- * ENGINE CORE: THE GREAT WALL OF WHITTIER 3D (V5 FINAL - MAXIMUM OVERDRIVE)
- * Pure JS Canvas 2D Pseudo-3D Engine. Features True 3-lane physics, Raised 3D Geometry (Deep Valleys),
- * Frustum Culling, Parallax, Procedural Generation, Particle Systems, and complete Audio Synthesis.
- * NO EXTERNAL LIBRARIES. FULLY SELF-CONTAINED.
- * ========================================================================================================================
- */
+/* ============================================================
+   MilesMars — Single-file prototype
+   - Uses Three.js for rendering
+   - Procedural terrain via Simplex noise
+   - Third-person camera with simple physics
+   - Missions, HUD, minimap, save/load
+   - Designed to be self-contained and easily extended
+   ============================================================ */
 
-// ========================================================================================================================
-// SECTION 1: CORE MATHEMATICS, FAST CACHING, & TRIGONOMETRY
-// ========================================================================================================================
-
-const MathLib = {
-    PI: Math.PI,
-    TWO_PI: Math.PI * 2,
-    HALF_PI: Math.PI / 2,
-    DEG2RAD: Math.PI / 180,
-    RAD2DEG: 180 / Math.PI,
-    
-    // Core utility functions
-    clamp: function(val, min, max) {
-        return Math.max(min, Math.min(max, val));
-    },
-    
-    lerp: function(a, b, t) {
-        return a + (b - a) * t;
-    },
-    
-    map: function(n, start1, stop1, start2, stop2) {
-        return ((n - start1) / (stop1 - start1)) * (stop2 - start2) + start2;
-    },
-    
-    rand: function(min, max) {
-        return Math.random() * (max - min) + min;
-    },
-    
-    randInt: function(min, max) {
-        return Math.floor(Math.random() * (max - min + 1)) + min;
-    },
-    
-    // Smooth Easing Functions
-    easeInQuad: function(t) { return t * t; },
-    easeOutQuad: function(t) { return t * (2 - t); },
-    easeInOutQuad: function(t) { return t < .5 ? 2 * t * t : -1 + (4 - 2 * t) * t; },
-    easeInOutSine: function(t) { return -(Math.cos(Math.PI * t) - 1) / 2; },
-    
-    // Fast Trigonometry Lookup Tables
-    // Pre-calculating 3600 indices for 0.1 degree precision to save CPU cycles during the render loop
-    sinTable: new Float32Array(3600),
-    cosTable: new Float32Array(3600),
-    tanTable: new Float32Array(3600),
-    
-    initTables: function() {
-        for (let i = 0; i < 3600; i++) {
-            let rad = (i / 10) * this.DEG2RAD;
-            this.sinTable[i] = Math.sin(rad);
-            this.cosTable[i] = Math.cos(rad);
-            this.tanTable[i] = Math.tan(rad);
-        }
-    },
-    
-    fastSin: function(deg) {
-        let idx = Math.floor((deg % 360) * 10);
-        if (idx < 0) idx += 3600;
-        return this.sinTable[idx];
-    },
-    
-    fastCos: function(deg) {
-        let idx = Math.floor((deg % 360) * 10);
-        if (idx < 0) idx += 3600;
-        return this.cosTable[idx];
-    },
-
-    // Procedural Noise Implementation (1D Perlin variant)
-    noise: function(x) {
-        x = (x << 13) ^ x;
-        return (1.0 - ((x * (x * x * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824.0);
-    },
-
-    smoothNoise: function(x) {
-        return this.noise(x) / 2 + this.noise(x - 1) / 4 + this.noise(x + 1) / 4;
-    },
-
-    interpNoise: function(x) {
-        let intX = Math.floor(x);
-        let fracX = x - intX;
-        let v1 = this.smoothNoise(intX);
-        let v2 = this.smoothNoise(intX + 1);
-        let ft = fracX * this.PI;
-        let f = (1 - Math.cos(ft)) * 0.5;
-        return v1 * (1 - f) + v2 * f;
-    }
+/* -------------------------
+   Global configuration
+   ------------------------- */
+const CONFIG = {
+  seed: Math.floor(Math.random()*1000000),
+  terrainSize: 2048,        // world size in units
+  terrainSegments: 256,     // grid resolution
+  heightScale: 120,         // vertical exaggeration
+  playerHeight: 2.0,
+  playerSpeed: 8.0,
+  sprintMultiplier: 1.6,
+  jumpSpeed: 8.5,
+  gravity: -28,
+  cameraDistance: 6.0,
+  cameraHeight: 2.2,
+  fogColor: 0x2b0f0b,
+  skyColor: 0x1b0b0b,
+  ambientLight: 0x8a6b5a,
+  directionalLight: 0xffe6d6,
+  oxygenDrainRate: 0.8, // per minute
+  healthDrainRate: 1.2, // per minute when oxygen depleted
+  missionCount: 4
 };
 
-// Initialize the lookup tables immediately
-MathLib.initTables();
-
-
-// ========================================================================================================================
-// SECTION 2: GLOBAL CONFIGURATION MATRIX
-// ========================================================================================================================
-
-const ENGINE_CFG = {
-    // Timing & Render Settings
-    FPS: 60,
-    STEP: 1 / 60,
-    FOV: 110,
-    DRAW_DIST: 350,          // How many segments deep to render
-    
-    // Geometry Constraints
-    SEGMENT_LEN: 200,        // Z-axis length of a single physical block
-    ROAD_WIDTH: 2600,        // Absolute width of the walkable wall
-    LANES: 3,                // Rigid 3-lane mechanic
-    VALLEY_DEPTH: 35000,     // Determines the "Raised Wall" effect. Distance from wall to valley floor.
-    CAM_HEIGHT: 1800,        // Player eye-level height from the road surface
-    
-    // Physics Parameters
-    PHYSICS: {
-        GRAVITY: 9.81 * 700, // Scaled up for arcade feel
-        MAX_SPEED: 40000,    // Top speed when moving
-        ACCEL: 6000,         // Acceleration rate
-        BRAKE: -18000,       // Active braking rate
-        COAST: -4000,        // Passive deceleration (friction)
-        SPRINT_MULT: 1.5,    // Multiplier applied to max speed when sprinting
-        JUMP_FORCE: 4800,    // Initial Y velocity when jumping
-        LANE_SPEED: 22,      // How fast the player interpolates between lanes
-        STAMINA_DRAIN: 30,   // Rate of stamina depletion per second
-        STAMINA_REGEN: 15,   // Rate of stamina recovery per second
-        CRASH_DMG: 34,       // Amount of HP lost per hazard hit (3 hits = death)
-        BOB_FREQ_WALK: 14,   // Head bobbing frequency when walking
-        BOB_FREQ_RUN: 20,    // Head bobbing frequency when sprinting
-        BOB_AMP: 60          // Head bobbing amplitude in pixels
-    },
-
-    // Master Color Palette
-    COLORS: {
-        // Atmosphere
-        SKY_TOP: '#050B14',
-        SKY_MID: '#1F3347',
-        SKY_BOT: '#5C7A8C',
-        SUN: '#FFF0D0',
-        FOG_BASE: 'rgba(125, 152, 161,', // Alpha appended dynamically
-        
-        // Architecture (The Great Wall)
-        BRICK_L: '#8C7E6C',
-        BRICK_D: '#7A6E5D',
-        WALL_FACE: '#63584B', // The sheer vertical drop off the sides
-        WALL_TOP: '#4A4137',  // Top caps of the parapets
-        MORTAR: '#383028',
-        DIVIDER: '#222222',   // Lane divider lines
-        
-        // Environment (The Deep Valley)
-        VALLEY_L: '#233B19',
-        VALLEY_D: '#17290F',
-        TREE_LEAF: '#101F0A',
-        TREE_TRUNK: '#23150A',
-        
-        // Hazards
-        ROCK_L: '#444444',
-        ROCK_D: '#333333',
-        WOOD_L: '#4A2A18',
-        WOOD_D: '#2A180C',
-        IRON: '#050505'
-    }
-};
-
-// Calculate the camera depth scalar based on FOV
-ENGINE_CFG.CAM_DEPTH = 1 / Math.tan((ENGINE_CFG.FOV / 2) * MathLib.DEG2RAD);
-
-
-// ========================================================================================================================
-// SECTION 3: PROCEDURAL AUDIO SYNTHESIZER (WEB AUDIO API)
-// ========================================================================================================================
-
-class AudioEngine {
-    constructor() {
-        this.initialized = false;
-    }
-
-    init() {
-        if (this.initialized) return;
-        
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        this.ctx = new AudioContext();
-        
-        // Master Gain Node
-        this.master = this.ctx.createGain();
-        this.master.gain.value = 0.6;
-        this.master.connect(this.ctx.destination);
-
-        // Pre-compute white noise buffer for wind and crash effects
-        this.noiseSize = this.ctx.sampleRate * 2; // 2 seconds of noise
-        this.noiseBuffer = this.ctx.createBuffer(1, this.noiseSize, this.ctx.sampleRate);
-        let output = this.noiseBuffer.getChannelData(0);
-        for (let i = 0; i < this.noiseSize; i++) {
-            output[i] = Math.random() * 2 - 1;
-        }
-
-        // Setup Continuous Ambient Wind
-        this.windSrc = this.ctx.createBufferSource();
-        this.windSrc.buffer = this.noiseBuffer;
-        this.windSrc.loop = true;
-        
-        this.windFilter = this.ctx.createBiquadFilter();
-        this.windFilter.type = 'lowpass';
-        this.windFilter.frequency.value = 100;
-        
-        this.windGain = this.ctx.createGain();
-        this.windGain.gain.value = 0; // Starts silent
-        
-        // Route Wind: Source -> Filter -> Gain -> Master
-        this.windSrc.connect(this.windFilter);
-        this.windFilter.connect(this.windGain);
-        this.windGain.connect(this.master);
-        
-        this.windSrc.start();
-        this.initialized = true;
-    }
-
-    resume() { 
-        if (this.initialized && this.ctx.state === 'suspended') {
-            this.ctx.resume(); 
-        }
-    }
-
-    updateWind(speedRatio) {
-        if (!this.initialized) return;
-        // Adjust wind volume and frequency based on player speed
-        let targetVol = speedRatio * 0.7;
-        let targetFreq = 100 + (speedRatio * 2500);
-        
-        this.windGain.gain.setTargetAtTime(targetVol, this.ctx.currentTime, 0.5);
-        this.windFilter.frequency.setTargetAtTime(targetFreq, this.ctx.currentTime, 0.5);
-    }
-
-    playJump() {
-        if (!this.initialized) return;
-        this.resume();
-        let t = this.ctx.currentTime;
-        
-        let osc = this.ctx.createOscillator();
-        let gain = this.ctx.createGain();
-        
-        osc.type = 'sine'; 
-        osc.frequency.setValueAtTime(150, t); 
-        osc.frequency.exponentialRampToValueAtTime(400, t + 0.2);
-        
-        gain.gain.setValueAtTime(0.6, t); 
-        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.2);
-        
-        osc.connect(gain); 
-        gain.connect(this.master); 
-        
-        osc.start(t); 
-        osc.stop(t + 0.2);
-    }
-
-    playCrash() {
-        if (!this.initialized) return;
-        this.resume();
-        let t = this.ctx.currentTime;
-        
-        // 1. Low frequency boom
-        let osc = this.ctx.createOscillator();
-        let gain1 = this.ctx.createGain();
-        osc.type = 'square'; 
-        osc.frequency.setValueAtTime(80, t); 
-        osc.frequency.exponentialRampToValueAtTime(10, t + 0.6);
-        
-        gain1.gain.setValueAtTime(1.0, t); 
-        gain1.gain.exponentialRampToValueAtTime(0.01, t + 0.6);
-        
-        osc.connect(gain1); 
-        gain1.connect(this.master); 
-        osc.start(t); 
-        osc.stop(t + 0.6);
-
-        // 2. High frequency shatter (Filtered Noise)
-        let noise = this.ctx.createBufferSource();
-        noise.buffer = this.noiseBuffer;
-        
-        let filter = this.ctx.createBiquadFilter();
-        filter.type = 'bandpass'; 
-        filter.frequency.value = 1000;
-        filter.Q.value = 1.5;
-        
-        let gain2 = this.ctx.createGain();
-        gain2.gain.setValueAtTime(1.2, t); 
-        gain2.gain.exponentialRampToValueAtTime(0.01, t + 0.4);
-        
-        noise.connect(filter); 
-        filter.connect(gain2); 
-        gain2.connect(this.master); 
-        
-        noise.start(t); 
-        noise.stop(t + 0.4);
-    }
-
-    playShift() {
-        if (!this.initialized) return;
-        this.resume();
-        let t = this.ctx.currentTime;
-        
-        let osc = this.ctx.createOscillator();
-        let gain = this.ctx.createGain();
-        
-        osc.type = 'triangle'; 
-        osc.frequency.setValueAtTime(300, t); 
-        osc.frequency.exponentialRampToValueAtTime(100, t + 0.1);
-        
-        gain.gain.setValueAtTime(0.2, t); 
-        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
-        
-        osc.connect(gain); 
-        gain.connect(this.master); 
-        
-        osc.start(t); 
-        osc.stop(t + 0.1);
-    }
+/* -------------------------
+   Utilities
+   ------------------------- */
+function rand(seed) {
+  let s = seed || CONFIG.seed;
+  return function() {
+    s = (s * 9301 + 49297) % 233280;
+    return s / 233280;
+  };
+}
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function lerp(a,b,t){ return a + (b-a)*t; }
+function now(){ return performance.now()/1000; }
+function formatTime(s){
+  const m = Math.floor(s/60);
+  const sec = Math.floor(s%60).toString().padStart(2,'0');
+  return `${m}:${sec}`;
 }
 
-// Instantiate globally, but defer initialization until user interaction
-const SFX = new AudioEngine();
-
-
-// ========================================================================================================================
-// SECTION 4: INPUT MANAGER (Keyboard & Touch handling)
-// ========================================================================================================================
-
-const IO = {
-    keys: {}, 
-    prev: {},
-    
-    init: function() {
-        // Keyboard Down
-        window.addEventListener('keydown', e => {
-            if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
-                e.preventDefault();
-            }
-            this.keys[e.code] = true;
-        });
-        
-        // Keyboard Up
-        window.addEventListener('keyup', e => { 
-            this.keys[e.code] = false; 
-        });
-        
-        // Clear inputs on blur to prevent stuck keys
-        window.addEventListener('blur', () => {
-            this.keys = {};
-        });
-    },
-    
-    update: function() { 
-        // Store previous frame state to detect "just pressed" edges
-        this.prev = { ...this.keys }; 
-    },
-    
-    isDown: function(arr) { 
-        return arr.some(c => this.keys[c]); 
-    },
-    
-    isJustPressed: function(arr) { 
-        return arr.some(c => this.keys[c] && !this.prev[c]); 
-    },
-    
-    // Semantic Getters
-    get left() { return this.isJustPressed(['KeyA', 'ArrowLeft']); },
-    get right() { return this.isJustPressed(['KeyD', 'ArrowRight']); },
-    get up() { return this.isDown(['KeyW', 'ArrowUp']); },
-    get down() { return this.isDown(['KeyS', 'ArrowDown']); },
-    get jump() { return this.isJustPressed(['Space']); },
-    get sprint() { return this.isDown(['ShiftLeft', 'ShiftRight', 'KeyW', 'ArrowUp']); }
-};
-
-IO.init();
-
-
-// ========================================================================================================================
-// SECTION 5: 3D ASSET & GRAPHICS LIBRARY
-// Uses pure Canvas 2D pathing to simulate complex 3D structures
-// ========================================================================================================================
-
-const Graphics = {
-    
-    // Helper to draw a 4-point polygon (quadrilateral)
-    poly: function(ctx, x1, y1, x2, y2, x3, y3, x4, y4, col) {
-        ctx.fillStyle = col; 
-        ctx.beginPath();
-        ctx.moveTo(x1, y1); 
-        ctx.lineTo(x2, y2); 
-        ctx.lineTo(x3, y3); 
-        ctx.lineTo(x4, y4);
-        ctx.closePath(); 
-        ctx.fill();
-    },
-
-    // --------------------------------------------------------------------------------------------------------------------
-    // ASSET: Massive Watchtower Gatehouse
-    // --------------------------------------------------------------------------------------------------------------------
-    drawTower: function(ctx, x, y, scale) {
-        let w = ENGINE_CFG.ROAD_WIDTH * 1.8 * scale;
-        let h = 5500 * scale;
-        
-        // Main block
-        ctx.fillStyle = ENGINE_CFG.COLORS.WALL_FACE;
-        ctx.fillRect(x - w/2, y - h, w, h);
-        
-        // Brick texture lines (Horizontal)
-        ctx.strokeStyle = ENGINE_CFG.COLORS.MORTAR;
-        ctx.lineWidth = Math.max(1, 2 * scale);
-        for(let i = 0; i < 15; i++) {
-            let ly = y - h + (i * h / 15);
-            ctx.beginPath(); 
-            ctx.moveTo(x - w/2, ly); 
-            ctx.lineTo(x + w/2, ly); 
-            ctx.stroke();
-        }
-
-        // Tunnel Archway Cutout
-        let aw = ENGINE_CFG.ROAD_WIDTH * scale;
-        let ah = h * 0.4;
-        ctx.fillStyle = '#050505'; // Darkness inside
-        ctx.beginPath();
-        ctx.moveTo(x - aw/2, y); 
-        ctx.lineTo(x - aw/2, y - ah + aw/2);
-        ctx.arc(x, y - ah + aw/2, aw/2, Math.PI, 0);
-        ctx.lineTo(x + aw/2, y); 
-        ctx.fill();
-
-        // Top Roof Parapets (The jagged top)
-        ctx.fillStyle = ENGINE_CFG.COLORS.WALL_TOP;
-        let pw = w / 13;
-        for(let i = 0; i < 13; i += 2) {
-            ctx.fillRect(x - w/2 + (i * pw), y - h - pw * 1.5, pw, pw * 1.5);
-        }
-        
-        // Upper Windows
-        ctx.fillStyle = '#111111';
-        ctx.fillRect(x - w*0.3, y - h*0.8, w*0.15, h*0.15);
-        ctx.fillRect(x + w*0.15, y - h*0.8, w*0.15, h*0.15);
-    },
-
-    // --------------------------------------------------------------------------------------------------------------------
-    // ASSET: Valley Beacons (Towers reaching up from the abyss)
-    // --------------------------------------------------------------------------------------------------------------------
-    drawValleyTower: function(ctx, x, y, scale) {
-        let w = 2500 * scale;
-        let h = 20000 * scale; // Extra tall to reach from valley to sky
-        
-        // Tapered body
-        ctx.fillStyle = ENGINE_CFG.COLORS.WALL_FACE;
-        ctx.beginPath();
-        ctx.moveTo(x - w/2, y); 
-        ctx.lineTo(x - w*0.3, y - h); 
-        ctx.lineTo(x + w*0.3, y - h); 
-        ctx.lineTo(x + w/2, y);
-        ctx.fill();
-        
-        // Highlight side for pseudo-lighting
-        ctx.fillStyle = 'rgba(255,255,255,0.03)';
-        ctx.beginPath();
-        ctx.moveTo(x, y); 
-        ctx.lineTo(x, y - h); 
-        ctx.lineTo(x + w*0.3, y - h); 
-        ctx.lineTo(x + w/2, y);
-        ctx.fill();
-        
-        // Top cap
-        ctx.fillStyle = ENGINE_CFG.COLORS.WALL_TOP;
-        ctx.fillRect(x - w*0.35, y - h - w*0.15, w*0.7, w*0.15);
-    },
-
-    // --------------------------------------------------------------------------------------------------------------------
-    // ASSET: Valley Trees
-    // --------------------------------------------------------------------------------------------------------------------
-    drawTree: function(ctx, x, y, scale) {
-        let w = 2500 * scale;
-        let h = 6000 * scale;
-        
-        // Trunk
-        ctx.fillStyle = ENGINE_CFG.COLORS.TREE_TRUNK;
-        ctx.fillRect(x - w*0.05, y - h, w*0.1, h);
-        
-        // Pine Tiers
-        ctx.fillStyle = ENGINE_CFG.COLORS.TREE_LEAF;
-        ctx.beginPath(); 
-        ctx.moveTo(x, y - h*0.8); 
-        ctx.lineTo(x - w/2, y - h*0.1); 
-        ctx.lineTo(x + w/2, y - h*0.1); 
-        ctx.fill();
-        
-        ctx.fillStyle = '#0A1406'; // Darker top tier
-        ctx.beginPath(); 
-        ctx.moveTo(x, y - h*1.0); 
-        ctx.lineTo(x - w*0.4, y - h*0.4); 
-        ctx.lineTo(x + w*0.4, y - h*0.4); 
-        ctx.fill();
-    },
-
-    // --------------------------------------------------------------------------------------------------------------------
-    // HAZARD: Fallen Rubble Pile
-    // --------------------------------------------------------------------------------------------------------------------
-    drawRock: function(ctx, x, y, scale) {
-        let w = (ENGINE_CFG.ROAD_WIDTH / 3) * 0.85 * scale; // Fits in one lane
-        let h = 1200 * scale;
-        
-        // Base pile shape
-        ctx.fillStyle = ENGINE_CFG.COLORS.ROCK_D;
-        ctx.beginPath(); 
-        ctx.moveTo(x - w/2, y); 
-        ctx.lineTo(x - w/4, y - h*0.8); 
-        ctx.lineTo(x + w/4, y - h*0.9); 
-        ctx.lineTo(x + w/2, y); 
-        ctx.fill();
-        
-        // Highlight rocks
-        ctx.fillStyle = ENGINE_CFG.COLORS.ROCK_L;
-        ctx.beginPath(); ctx.arc(x - w/4, y - h*0.4, w/4, 0, Math.PI*2); ctx.fill();
-        ctx.beginPath(); ctx.arc(x + w/4, y - h*0.5, w/5, 0, Math.PI*2); ctx.fill();
-        ctx.beginPath(); ctx.arc(x, y - h*0.7, w/6, 0, Math.PI*2); ctx.fill();
-    },
-
-    // --------------------------------------------------------------------------------------------------------------------
-    // HAZARD: Broken Wooden Cart
-    // --------------------------------------------------------------------------------------------------------------------
-    drawCart: function(ctx, x, y, scale) {
-        let w = (ENGINE_CFG.ROAD_WIDTH / 3) * 0.7 * scale;
-        let h = 900 * scale;
-        
-        // Wheels (Iron/Black)
-        ctx.fillStyle = ENGINE_CFG.COLORS.IRON;
-        ctx.beginPath(); ctx.arc(x - w*0.3, y - h*0.2, h*0.2, 0, Math.PI*2); ctx.fill();
-        ctx.beginPath(); ctx.arc(x + w*0.3, y - h*0.2, h*0.2, 0, Math.PI*2); ctx.fill();
-        
-        // Wood Body Backboard
-        ctx.fillStyle = ENGINE_CFG.COLORS.WOOD_L;
-        ctx.fillRect(x - w/2, y - h, w, h*0.8);
-        
-        // Darker Wood Slats
-        ctx.fillStyle = ENGINE_CFG.COLORS.WOOD_D;
-        ctx.fillRect(x - w/2, y - h + h*0.2, w, h*0.1);
-        ctx.fillRect(x - w/2, y - h + h*0.5, w, h*0.1);
-        
-        // Vertical planks
-        for(let i = 1; i < 4; i++) {
-            ctx.fillRect(x - w/2 + (i * w/4) - w*0.02, y - h, w*0.04, h*0.8);
-        }
-    }
-};
-
-
-// ========================================================================================================================
-// SECTION 6: WORLD GENERATOR (3D Matrix Topology)
-// ========================================================================================================================
-
-class Segment {
-    constructor(idx) {
-        this.idx = idx;
-        this.z = idx * ENGINE_CFG.SEGMENT_LEN;
-        
-        // Absolute World Coordinates
-        this.x = 0; 
-        this.y = 0; 
-        
-        // Properties
-        this.curve = 0;
-        this.sprites = [];
-        this.colIdx = Math.floor(idx / 3) % 2; // For creating alternating floor stripes
-        
-        // Pre-allocate projection coordinates to prevent garbage collection spikes
-        this.p1 = { x: 0, y: 0, z: 0, sx: 0, sy: 0, w: 0, scale: 0 };
-        this.p2 = { x: 0, y: 0, z: 0, sx: 0, sy: 0, w: 0, scale: 0 };
-    }
-    
-    // Executes the 3D to 2D screen projection mathematics
-    project(camX, camY, camZ, viewW, viewH) {
-        // Point 1 (Start of segment)
-        this.p1.z = this.z - camZ; 
-        if(this.p1.z < 1) this.p1.z = 1; // Prevent division by zero
-        this.p1.scale = ENGINE_CFG.CAM_DEPTH / this.p1.z;
-        this.p1.sx = viewW / 2 + (this.p1.scale * (this.p1.x - camX) * viewW / 2);
-        this.p1.sy = viewH / 2 - (this.p1.scale * (this.p1.y - camY) * viewH / 2);
-        this.p1.w = (this.p1.scale * ENGINE_CFG.ROAD_WIDTH * viewW / 2);
-
-        // Point 2 (End of segment)
-        this.p2.z = this.z + ENGINE_CFG.SEGMENT_LEN - camZ; 
-        if(this.p2.z < 1) this.p2.z = 1;
-        this.p2.scale = ENGINE_CFG.CAM_DEPTH / this.p2.z;
-        this.p2.sx = viewW / 2 + (this.p2.scale * (this.p2.x - camX) * viewW / 2);
-        this.p2.sy = viewH / 2 - (this.p2.scale * (this.p2.y - camY) * viewH / 2);
-        this.p2.w = (this.p2.scale * ENGINE_CFG.ROAD_WIDTH * viewW / 2);
-    }
+/* -------------------------
+   Logging / HUD helpers
+   ------------------------- */
+const logEl = document.getElementById('log');
+function log(msg){
+  const p = document.createElement('div');
+  p.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  logEl.prepend(p);
+  // keep max
+  while(logEl.children.length > 80) logEl.removeChild(logEl.lastChild);
 }
 
-class WorldMatrix {
-    constructor() {
-        this.segments = [];
-        this.totalLength = 0;
-    }
-    
-    build() {
-        this.segments = [];
-        let curY = 0; 
-        let curCurve = 0;
-        const totalSegs = 30000; // Massive track
+/* -------------------------
+   Scene setup
+   ------------------------- */
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
-        for (let i = 0; i < totalSegs; i++) {
-            let seg = new Segment(i);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(CONFIG.skyColor);
+scene.fog = new THREE.FogExp2(CONFIG.fogColor, 0.0006);
 
-            // ------------------------------------------------------------------------------------------------------------
-            // 1. Geography & Topology Generation
-            // ------------------------------------------------------------------------------------------------------------
-            if (i > 100) {
-                // Determine curving
-                if (i % 1500 < 300) {
-                    curCurve += 0.005; // Tight curve right
-                } else if (i % 1500 < 600) {
-                    curCurve -= 0.005; // Tight curve left
-                } else if (i % 1500 < 900) {
-                    curCurve = Math.sin(i / 30) * 0.08; // Slalom snakes
-                } else {
-                    curCurve = 0; // Straight
-                }
-                
-                // Determine elevation (Simulating mountain ridges)
-                if (i % 2000 < 400) {
-                    curY += 120; // Brutal stair climb
-                } else if (i % 2000 < 800) {
-                    curY -= 90; // Drop
-                } else {
-                    curY += Math.sin(i / 40) * 60; // Rolling hills
-                }
-            }
-            
-            // Constrain elevation to avoid breaking the renderer
-            curY = MathLib.clamp(curY, -20000, 40000);
-            
-            seg.curve = curCurve; 
-            seg.y = curY;
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 5000);
+camera.position.set(0, CONFIG.cameraHeight, CONFIG.cameraDistance);
 
-            // ------------------------------------------------------------------------------------------------------------
-            // 2. Scenery & Decor Placement
-            // ------------------------------------------------------------------------------------------------------------
-            
-            // Archway Gates
-            if (i > 200 && i % 400 === 0) {
-                seg.sprites.push({ draw: Graphics.drawTower, offset: 0, hazard: false });
-            }
-            
-            // Valley Towers
-            if (i > 50 && i % 80 === 0 && i % 400 !== 0) {
-                seg.sprites.push({ draw: Graphics.drawValleyTower, offset: -2.2, hazard: false, isValley: true });
-                seg.sprites.push({ draw: Graphics.drawValleyTower, offset: 2.2, hazard: false, isValley: true });
-            }
-            
-            // Valley Trees
-            if (i % 15 === 0) {
-                let side = Math.random() > 0.5 ? 1 : -1;
-                let dist = MathLib.rand(3, 8);
-                seg.sprites.push({ draw: Graphics.drawTree, offset: side * dist, hazard: false, isValley: true });
-            }
+/* Lights */
+const ambient = new THREE.HemisphereLight(0xffe6d6, 0x33221a, 0.6);
+scene.add(ambient);
 
-            // ------------------------------------------------------------------------------------------------------------
-            // 3. Hazard Placement (Progressive Difficulty)
-            // ------------------------------------------------------------------------------------------------------------
-            let difficultyFreq = Math.max(10, 100 - Math.floor(i / 250));
-            if (i > 300 && i % difficultyFreq === 0 && i % 400 !== 0) {
-                // Pick a lane: 0 (Left), 1 (Center), 2 (Right)
-                let lane = MathLib.randInt(0, 2);
-                
-                // Map lane index to spatial offset (-0.66, 0, 0.66)
-                let offset = (lane - 1) * 0.66; 
-                
-                let drawFunc = Math.random() > 0.5 ? Graphics.drawRock : Graphics.drawCart;
-                
-                seg.sprites.push({ 
-                    draw: drawFunc, 
-                    offset: offset, 
-                    hazard: true, 
-                    lane: lane 
-                });
-            }
-            
-            this.segments.push(seg);
-        }
+const sun = new THREE.DirectionalLight(CONFIG.directionalLight, 1.0);
+sun.position.set(200, 400, 100);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left = -800;
+sun.shadow.camera.right = 800;
+sun.shadow.camera.top = 800;
+sun.shadow.camera.bottom = -800;
+sun.shadow.camera.far = 1200;
+scene.add(sun);
 
-        // Bake Absolute X coordinates based on accumulated curves
-        let absX = 0;
-        let deltaX = 0;
-        for(let i = 0; i < this.segments.length; i++) {
-            absX += deltaX; 
-            deltaX += this.segments[i].curve;
-            this.segments[i].x = absX;
-        }
-        
-        this.totalLength = this.segments.length * ENGINE_CFG.SEGMENT_LEN;
-    }
-    
-    getSeg(zCoord) { 
-        let idx = Math.floor(zCoord / ENGINE_CFG.SEGMENT_LEN) % this.segments.length;
-        if(idx < 0) idx += this.segments.length;
-        return this.segments[idx]; 
-    }
+/* -------------------------
+   Terrain generation
+   ------------------------- */
+const simplex = new SimplexNoise(CONFIG.seed.toString());
+const terrainGroup = new THREE.Group();
+terrainGroup.name = "terrain";
+scene.add(terrainGroup);
+
+let terrainMesh;
+function generateTerrain(){
+  if(terrainMesh) {
+    terrainGroup.remove(terrainMesh);
+    terrainMesh.geometry.dispose();
+    terrainMesh.material.dispose();
+  }
+
+  const size = CONFIG.terrainSize;
+  const seg = CONFIG.terrainSegments;
+  const geometry = new THREE.PlaneGeometry(size, size, seg, seg);
+  geometry.rotateX(-Math.PI/2);
+
+  const pos = geometry.attributes.position;
+  const vertex = new THREE.Vector3();
+  const freqBase = 0.0009;
+  for(let i=0;i<pos.count;i++){
+    vertex.fromBufferAttribute(pos, i);
+    const nx = vertex.x;
+    const nz = vertex.z;
+    // layered noise for realistic Mars-like terrain
+    let e = 0;
+    e += simplex.noise2D(nx*freqBase, nz*freqBase) * 1.0;
+    e += simplex.noise2D(nx*freqBase*2.3, nz*freqBase*2.3) * 0.5;
+    e += simplex.noise2D(nx*freqBase*5.7, nz*freqBase*5.7) * 0.25;
+    e = Math.pow(Math.abs(e), 1.6) * (e<0?-1:1);
+    // add ridges and craters
+    const crater = Math.abs(simplex.noise2D(nx*0.0012, nz*0.0012));
+    const craterDepth = Math.max(0, (0.6 - crater)) * 1.2;
+    const ridges = simplex.noise2D(nx*0.0006, nz*0.0006) * 0.6;
+    const height = (e * CONFIG.heightScale) + (craterDepth * -40) + (ridges * 12);
+    pos.setY(i, height);
+  }
+  geometry.computeVertexNormals();
+
+  // color by height
+  const colors = [];
+  for(let i=0;i<pos.count;i++){
+    const y = pos.getY(i);
+    let c = new THREE.Color();
+    if(y < -10) c.set('#6b3f2a'); // deep shadow
+    else if(y < 6) c.set('#8b4b2f');
+    else if(y < 30) c.set('#b86a3f');
+    else c.set('#d08b5a');
+    // subtle variation
+    c.offsetHSL(0, 0, (simplex.noise2D(i*0.01, i*0.01)-0.5)*0.06);
+    colors.push(c.r, c.g, c.b);
+  }
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+  const material = new THREE.MeshStandardMaterial({
+    vertexColors: true,
+    roughness: 1.0,
+    metalness: 0.0,
+    flatShading: false,
+    side: THREE.DoubleSide
+  });
+
+  terrainMesh = new THREE.Mesh(geometry, material);
+  terrainMesh.receiveShadow = true;
+  terrainMesh.castShadow = false;
+  terrainGroup.add(terrainMesh);
+
+  // add scattered rocks and boulders
+  addRocksAndProps(geometry);
 }
 
+/* -------------------------
+   Rocks and props
+   ------------------------- */
+const propsGroup = new THREE.Group();
+propsGroup.name = "props";
+scene.add(propsGroup);
 
-// ========================================================================================================================
-// SECTION 7: PLAYER ENTITY (3D PHYSICS & KINEMATICS)
-// ========================================================================================================================
+function addRocksAndProps(terrainGeometry){
+  // clear
+  while(propsGroup.children.length) {
+    const c = propsGroup.children.pop();
+    c.geometry?.dispose?.();
+    c.material?.dispose?.();
+  }
+  const pos = terrainGeometry.attributes.position;
+  const grid = CONFIG.terrainSegments + 1;
+  const size = CONFIG.terrainSize;
+  const step = size / CONFIG.terrainSegments;
+  const rockCount = 1200;
+  const rockGeo = new THREE.IcosahedronGeometry(1,1);
+  const rockMat = new THREE.MeshStandardMaterial({color:0x6b4b3a, roughness:1});
+  for(let i=0;i<rockCount;i++){
+    const rx = (Math.random()-0.5) * size;
+    const rz = (Math.random()-0.5) * size;
+    // sample height from terrain
+    const ix = Math.floor((rx + size/2) / step);
+    const iz = Math.floor((rz + size/2) / step);
+    const idx = iz * (grid) + ix;
+    if(idx < 0 || idx >= pos.count) continue;
+    const y = pos.getY(idx);
+    // avoid placing rocks too steep
+    if(y < -80 || y > 200) continue;
+    const rock = new THREE.Mesh(rockGeo, rockMat.clone());
+    const s = 0.6 + Math.random()*3.2;
+    rock.scale.setScalar(s);
+    rock.position.set(rx, y + s*0.5, rz);
+    rock.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+    rock.castShadow = true;
+    rock.receiveShadow = true;
+    propsGroup.add(rock);
+  }
 
-class PlayerController {
-    constructor() { 
-        this.reset(); 
-    }
-    
-    reset() {
-        this.lane = 1; // Start in center lane
-        this.z = 0; 
-        this.y = 0;
-        
-        this.targetX = 0; 
-        this.curX = 0;
-        
-        this.velZ = 0; 
-        this.velY = 0;
-        
-        this.hp = 100; 
-        this.stamina = 100;
-        
-        this.isGND = true; 
-        this.score = 0;
-        
-        this.camRoll = 0; 
-        this.headBob = 0;
-    }
+  // add a few larger boulders and artifacts
+  for(let i=0;i<40;i++){
+    const rx = (Math.random()-0.5) * size;
+    const rz = (Math.random()-0.5) * size;
+    const ix = Math.floor((rx + size/2) / step);
+    const iz = Math.floor((rz + size/2) / step);
+    const idx = iz * (grid) + ix;
+    if(idx < 0 || idx >= pos.count) continue;
+    const y = pos.getY(idx);
+    const bgeo = new THREE.DodecahedronGeometry(1 + Math.random()*3, 0);
+    const bmat = new THREE.MeshStandardMaterial({color:0x5b3f33, roughness:1});
+    const b = new THREE.Mesh(bgeo, bmat);
+    const s = 3 + Math.random()*8;
+    b.scale.setScalar(s);
+    b.position.set(rx, y + s*0.5, rz);
+    b.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+    b.castShadow = true;
+    b.receiveShadow = true;
+    propsGroup.add(b);
+  }
 
-    update(dt, world) {
-        if (this.hp <= 0) return;
-
-        // ----------------------------------------------------------------------------------------------------------------
-        // Lane Shifting Logic
-        // ----------------------------------------------------------------------------------------------------------------
-        if (IO.left && this.lane > 0) { 
-            this.lane--; 
-            SFX.playShift(); 
-        }
-        if (IO.right && this.lane < 2) { 
-            this.lane++; 
-            SFX.playShift(); 
-        }
-        
-        this.targetX = (this.lane - 1) * 0.66;
-        let diff = this.targetX - this.curX;
-        this.curX += diff * dt * ENGINE_CFG.PHYSICS.LANE_SPEED;
-        
-        // Roll camera dynamically based on lateral momentum
-        this.camRoll = diff * 40; 
-
-        // ----------------------------------------------------------------------------------------------------------------
-        // Forward Engine & Stamina Management
-        // ----------------------------------------------------------------------------------------------------------------
-        let isSprint = IO.sprint && this.stamina > 0;
-        
-        if (IO.up) {
-            this.velZ += ENGINE_CFG.PHYSICS.ACCEL * (isSprint ? 1.5 : 1) * dt;
-            
-            if (isSprint) {
-                this.stamina -= ENGINE_CFG.PHYSICS.STAMINA_DRAIN * dt;
-            } else {
-                this.stamina += ENGINE_CFG.PHYSICS.STAMINA_REGEN * 0.5 * dt;
-            }
-        } else if (IO.down) {
-            this.velZ += ENGINE_CFG.PHYSICS.BRAKE * dt;
-            this.stamina += ENGINE_CFG.PHYSICS.STAMINA_REGEN * dt;
-        } else {
-            this.velZ += ENGINE_CFG.PHYSICS.COAST * dt;
-            this.stamina += ENGINE_CFG.PHYSICS.STAMINA_REGEN * dt;
-        }
-
-        this.stamina = MathLib.clamp(this.stamina, 0, 100);
-        
-        let maxV = isSprint ? ENGINE_CFG.PHYSICS.MAX_SPEED * ENGINE_CFG.PHYSICS.SPRINT_MULT : ENGINE_CFG.PHYSICS.MAX_SPEED;
-        this.velZ = MathLib.clamp(this.velZ, 0, maxV);
-
-        // ----------------------------------------------------------------------------------------------------------------
-        // Topography Gravity (Hills affect speed)
-        // ----------------------------------------------------------------------------------------------------------------
-        let cSeg = world.getSeg(this.z);
-        let nSeg = world.getSeg(this.z + ENGINE_CFG.SEGMENT_LEN);
-        let slope = (nSeg.y - cSeg.y) / ENGINE_CFG.SEGMENT_LEN;
-        
-        // Going up slows you down, going down speeds you up
-        this.velZ -= slope * ENGINE_CFG.PHYSICS.GRAVITY * 0.5 * dt;
-        this.velZ = Math.max(0, this.velZ);
-
-        // Advance Z Position
-        this.z += this.velZ * dt;
-        if(this.z >= world.totalLength) this.z -= world.totalLength; // Loop map
-        this.score = Math.floor(this.z / 100);
-
-        // ----------------------------------------------------------------------------------------------------------------
-        // Vertical Jump Engine
-        // ----------------------------------------------------------------------------------------------------------------
-        if (IO.jump && this.isGND && this.stamina >= 15) {
-            this.velY = ENGINE_CFG.PHYSICS.JUMP_FORCE;
-            this.isGND = false; 
-            this.stamina -= 15;
-            SFX.playJump();
-        }
-        
-        // Apply Gravity
-        this.velY -= ENGINE_CFG.PHYSICS.GRAVITY * dt;
-        this.y += this.velY * dt;
-        
-        // Floor Collision
-        if (this.y < 0) { 
-            this.y = 0; 
-            this.velY = 0; 
-            this.isGND = true; 
-        }
-
-        // ----------------------------------------------------------------------------------------------------------------
-        // Head Bobbing Kinematics
-        // ----------------------------------------------------------------------------------------------------------------
-        if (this.isGND && this.velZ > 1000) {
-            let bobFreq = isSprint ? ENGINE_CFG.PHYSICS.BOB_FREQ_RUN : ENGINE_CFG.PHYSICS.BOB_FREQ_WALK;
-            this.headBob += dt * bobFreq;
-        } else {
-            // Smoothly return to center
-            this.headBob += (0 - Math.sin(this.headBob)) * dt * 10;
-        }
-
-        // ----------------------------------------------------------------------------------------------------------------
-        // Hazard Collision Detection
-        // ----------------------------------------------------------------------------------------------------------------
-        // Check the segment slightly ahead of the player
-        let chkSeg = world.getSeg(this.z + ENGINE_CFG.SEGMENT_LEN);
-        for (let i = 0; i < chkSeg.sprites.length; i++) {
-            let spr = chkSeg.sprites[i];
-            
-            if (spr.hazard && this.lane === spr.lane) {
-                // Check Y-axis clearance. Assume obstacles are ~1200 units tall
-                if (this.y < 1200) {
-                    this.triggerDamage();
-                    // Remove the sprite to prevent multi-hit frames
-                    chkSeg.sprites.splice(i, 1);
-                    break;
-                }
-            }
-        }
-    }
-
-    triggerDamage() {
-        this.hp -= ENGINE_CFG.PHYSICS.CRASH_DMG;
-        this.velZ *= 0.15; // Massive kinetic loss on impact
-        
-        SFX.playCrash();
-        
-        // Trigger Red Flash CSS
-        let fx = document.getElementById('fx-damage');
-        fx.style.opacity = 1; 
-        setTimeout(() => fx.style.opacity = 0, 150);
-        
-        // Trigger Screen Shake
-        CoreRender.triggerShake(0.6, 40);
-
-        if (this.hp <= 0) {
-            GameManager.setState('DEATH');
-        }
-    }
+  // place mission beacons (artifacts)
+  missionBeacons = [];
+  for(let i=0;i<CONFIG.missionCount;i++){
+    const rx = (Math.random()-0.5) * size * 0.8;
+    const rz = (Math.random()-0.5) * size * 0.8;
+    const ix = Math.floor((rx + size/2) / step);
+    const iz = Math.floor((rz + size/2) / step);
+    const idx = iz * (grid) + ix;
+    if(idx < 0 || idx >= pos.count) continue;
+    const y = pos.getY(idx);
+    const beacon = createBeacon();
+    beacon.position.set(rx, y + 2.2, rz);
+    propsGroup.add(beacon);
+    missionBeacons.push({obj:beacon, pos:new THREE.Vector3(rx,y,rz), collected:false});
+  }
 }
 
+/* -------------------------
+   Beacon (mission artifact)
+   ------------------------- */
+function createBeacon(){
+  const g = new THREE.Group();
+  const base = new THREE.CylinderGeometry(0.6, 0.8, 0.6, 12);
+  const baseM = new THREE.MeshStandardMaterial({color:0x2b2b2b, roughness:0.9});
+  const baseMesh = new THREE.Mesh(base, baseM);
+  baseMesh.castShadow = true;
+  baseMesh.receiveShadow = true;
+  g.add(baseMesh);
 
-// ========================================================================================================================
-// SECTION 8: 3D RENDER ENGINE (PAINTER'S ALGORITHM, FRUSTUM CULLING, & SYNTHETIC DEPTH)
-// ========================================================================================================================
+  const core = new THREE.SphereGeometry(0.5, 16, 12);
+  const coreM = new THREE.MeshStandardMaterial({emissive:0xff6f3c, emissiveIntensity:1.2, color:0x220000});
+  const coreMesh = new THREE.Mesh(core, coreM);
+  coreMesh.position.y = 0.8;
+  g.add(coreMesh);
 
-class RenderEngine {
-    constructor() {
-        // Sky/Background Layer
-        this.cvsSky = document.getElementById('layer-sky'); 
-        this.ctxSky = this.cvsSky.getContext('2d', { alpha: false });
-        
-        // Main 3D Geometry Layer
-        this.cvsWorld = document.getElementById('layer-world'); 
-        this.ctxWorld = this.cvsWorld.getContext('2d', { alpha: true });
-        
-        this.shakeTimer = 0; 
-        this.shakeInt = 0;
-        this.resize();
-    }
-    
-    resize() {
-        this.w = window.innerWidth; 
-        this.h = window.innerHeight;
-        this.cvsSky.width = this.w; 
-        this.cvsSky.height = this.h;
-        this.cvsWorld.width = this.w; 
-        this.cvsWorld.height = this.h;
-    }
-    
-    triggerShake(duration, intensity) { 
-        this.shakeTimer = duration; 
-        this.shakeInt = intensity; 
-    }
+  // rotating ring
+  const ringGeo = new THREE.TorusGeometry(1.2, 0.08, 8, 64);
+  const ringMat = new THREE.MeshStandardMaterial({color:0xffb07a, metalness:0.2, roughness:0.4});
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.position.y = 1.0;
+  ring.rotation.x = Math.PI/2;
+  g.add(ring);
 
-    render(world, player, dt) {
-        // ----------------------------------------------------------------------------------------------------------------
-        // Camera & Shake Logic
-        // ----------------------------------------------------------------------------------------------------------------
-        if (this.shakeTimer > 0) this.shakeTimer -= dt;
-        
-        let sx = this.shakeTimer > 0 ? MathLib.rand(-this.shakeInt, this.shakeInt) : 0;
-        let sy = this.shakeTimer > 0 ? MathLib.rand(-this.shakeInt, this.shakeInt) : 0;
-
-        let bSeg = world.getSeg(player.z);
-        let bPct = (player.z % ENGINE_CFG.SEGMENT_LEN) / ENGINE_CFG.SEGMENT_LEN;
-        let nSeg = world.getSeg(player.z + ENGINE_CFG.SEGMENT_LEN);
-        
-        // Smoothly interpolate the base elevation
-        let elevY = MathLib.lerp(bSeg.y, nSeg.y, bPct);
-        
-        // Calculate Absolute Camera Vectors
-        let camX = (player.curX * ENGINE_CFG.ROAD_WIDTH) + sx;
-        let camY = elevY + ENGINE_CFG.CAM_HEIGHT + player.y + (Math.sin(player.headBob) * ENGINE_CFG.PHYSICS.BOB_AMP) + sy;
-        let camZ = player.z;
-
-        // ----------------------------------------------------------------------------------------------------------------
-        // LAYER 1: SKY, SUN, & PARALLAX MOUNTAINS
-        // ----------------------------------------------------------------------------------------------------------------
-        
-        // Sky Gradient
-        let sg = this.ctxSky.createLinearGradient(0, 0, 0, this.h);
-        sg.addColorStop(0, ENGINE_CFG.COLORS.SKY_TOP); 
-        sg.addColorStop(0.5, ENGINE_CFG.COLORS.SKY_MID); 
-        sg.addColorStop(1, ENGINE_CFG.COLORS.SKY_BOT);
-        this.ctxSky.fillStyle = sg; 
-        this.ctxSky.fillRect(0, 0, this.w, this.h);
-
-        // Parallax Horizons
-        let hY = this.h/2 - (elevY * 0.05);
-        let hX = -(bSeg.curve * 4000);
-
-        // Render Sun
-        this.ctxSky.fillStyle = ENGINE_CFG.COLORS.SUN;
-        this.ctxSky.beginPath(); 
-        this.ctxSky.arc(this.w * 0.75 + hX * 0.1, hY - 150, 100, 0, MathLib.TWO_PI); 
-        this.ctxSky.fill();
-
-        // Render Distant Parallax Mountain Range
-        this.ctxSky.fillStyle = '#162330';
-        this.ctxSky.beginPath(); 
-        this.ctxSky.moveTo(0, this.h);
-        for(let i = 0; i <= this.w; i += 80) {
-            let mY = hY + Math.sin(i * 0.01 + hX * 0.005) * 200 + Math.cos(i * 0.025) * 100;
-            this.ctxSky.lineTo(i, mY);
-        }
-        this.ctxSky.lineTo(this.w, this.h); 
-        this.ctxSky.fill();
-
-        // ----------------------------------------------------------------------------------------------------------------
-        // LAYER 2: 3D WORLD PIPELINE (Geometry & Sprites)
-        // ----------------------------------------------------------------------------------------------------------------
-        
-        this.ctxWorld.clearRect(0, 0, this.w, this.h);
-        
-        // Apply Camera Roll matrix transformation
-        this.ctxWorld.save();
-        this.ctxWorld.translate(this.w/2, this.h/2);
-        this.ctxWorld.rotate(player.camRoll * MathLib.DEG2RAD);
-        this.ctxWorld.translate(-this.w/2, -this.h/2);
-
-        let dx = -(bSeg.curve * bPct);
-        let cx = 0;
-        let clipY = this.h; // Painter's Algorithm Max-Y clipping plane
-        let spriteQueue = [];
-
-        // Loop through DRAW_DIST to build world front-to-back (for geometry)
-        for (let n = 0; n < ENGINE_CFG.DRAW_DIST; n++) {
-            let seg = world.getSeg(player.z + n * ENGINE_CFG.SEGMENT_LEN);
-            let loop = (player.z > seg.z) ? world.totalLength : 0; // Handle map wrapping
-            
-            // Transform Start Point
-            seg.p1.x = seg.x - cx; 
-            seg.p1.y = seg.y; 
-            seg.p1.z = seg.z + loop;
-            
-            // Transform End Point
-            let nxt = world.getSeg(player.z + (n+1) * ENGINE_CFG.SEGMENT_LEN);
-            seg.p2.x = nxt.x - cx - dx; 
-            seg.p2.y = nxt.y; 
-            seg.p2.z = nxt.z + loop;
-
-            // Accumulate curve deviation
-            cx += dx; 
-            dx += nxt.curve;
-
-            // Execute 3D Projection math
-            seg.project(camX, camY, camZ, this.w, this.h);
-
-            // Frustum Culling (If behind camera or occluded by hills)
-            if (seg.p1.z <= ENGINE_CFG.CAM_DEPTH || seg.p2.sy >= clipY) continue;
-
-            // Material Selection
-            let cB = seg.colIdx === 0 ? ENGINE_CFG.COLORS.BRICK_L : ENGINE_CFG.COLORS.BRICK_D;
-            let cV = seg.colIdx === 0 ? ENGINE_CFG.COLORS.VALLEY_L : ENGINE_CFG.COLORS.VALLEY_D;
-            let w1 = seg.p1.w, w2 = seg.p2.w;
-
-            // ------------------------------------------------------------------------------------------------------------
-            // THE RAISED WALL EFFECT
-            // Calculates projection coordinates for a point MASSIVELY below the actual track
-            // ------------------------------------------------------------------------------------------------------------
-            let vDrop = ENGINE_CFG.VALLEY_DEPTH;
-            let sy1V = this.h/2 - (seg.p1.scale * (seg.y - vDrop - camY) * this.h/2);
-            let sy2V = this.h/2 - (seg.p2.scale * (nxt.y - vDrop - camY) * this.h/2);
-
-            // 1. Valley Floor (Grass way down below)
-            Graphics.poly(this.ctxWorld, 0, sy2V, this.w, sy2V, this.w, sy1V, 0, sy1V, cV);
-
-            // 2. Sheer Vertical Drop Walls (Sides of the Great Wall)
-            Graphics.poly(this.ctxWorld, seg.p1.sx - w1, sy1V, seg.p1.sx - w1, seg.p1.sy, seg.p2.sx - w2, seg.p2.sy, seg.p2.sx - w2, sy2V, ENGINE_CFG.COLORS.WALL_FACE);
-            Graphics.poly(this.ctxWorld, seg.p1.sx + w1, seg.p1.sy, seg.p1.sx + w1, sy1V, seg.p2.sx + w2, sy2V, seg.p2.sx + w2, seg.p2.sy, ENGINE_CFG.COLORS.WALL_FACE);
-
-            // 3. Main Walkable Path
-            Graphics.poly(this.ctxWorld, seg.p1.sx - w1, seg.p1.sy, seg.p1.sx + w1, seg.p1.sy, seg.p2.sx + w2, seg.p2.sy, seg.p2.sx - w2, seg.p2.sy, cB);
-
-            // 4. Parapets (Guard Rails on the edges)
-            let pw1 = w1 * 0.15, pw2 = w2 * 0.15;
-            let ph1 = seg.p1.scale * 3500, ph2 = seg.p2.scale * 3500;
-            
-            // Left Parapet
-            Graphics.poly(this.ctxWorld, seg.p1.sx - w1 - pw1, seg.p1.sy - ph1, seg.p1.sx - w1, seg.p1.sy, seg.p2.sx - w2, seg.p2.sy, seg.p2.sx - w2 - pw2, seg.p2.sy - ph2, ENGINE_CFG.COLORS.WALL_FACE);
-            Graphics.poly(this.ctxWorld, seg.p1.sx - w1 - pw1, seg.p1.sy - ph1, seg.p1.sx - w1, seg.p1.sy - ph1, seg.p2.sx - w2, seg.p2.sy - ph2, seg.p2.sx - w2 - pw2, seg.p2.sy - ph2, ENGINE_CFG.COLORS.WALL_TOP);
-            
-            // Right Parapet
-            Graphics.poly(this.ctxWorld, seg.p1.sx + w1, seg.p1.sy, seg.p1.sx + w1 + pw1, seg.p1.sy - ph1, seg.p2.sx + w2 + pw2, seg.p2.sy - ph2, seg.p2.sx + w2, seg.p2.sy, ENGINE_CFG.COLORS.WALL_FACE);
-            Graphics.poly(this.ctxWorld, seg.p1.sx + w1, seg.p1.sy - ph1, seg.p1.sx + w1 + pw1, seg.p1.sy - ph1, seg.p2.sx + w2 + pw2, seg.p2.sy - ph2, seg.p2.sx + w2, seg.p2.sy - ph2, ENGINE_CFG.COLORS.WALL_TOP);
-
-            // 5. Visual Lane Dividers
-            if (seg.colIdx === 0) {
-                let o1 = w1 * 0.33, o2 = w2 * 0.33;
-                let lw1 = w1 * 0.02, lw2 = w2 * 0.02;
-                Graphics.poly(this.ctxWorld, seg.p1.sx - o1 - lw1, seg.p1.sy, seg.p1.sx - o1 + lw1, seg.p1.sy, seg.p2.sx - o2 + lw2, seg.p2.sy, seg.p2.sx - o2 - lw2, seg.p2.sy, ENGINE_CFG.COLORS.DIVIDER);
-                Graphics.poly(this.ctxWorld, seg.p1.sx + o1 - lw1, seg.p1.sy, seg.p1.sx + o1 + lw1, seg.p1.sy, seg.p2.sx + o2 + lw2, seg.p2.sy, seg.p2.sx + o2 - lw2, seg.p2.sy, ENGINE_CFG.COLORS.DIVIDER);
-            }
-
-            // 6. Volumetric Depth Fog calculation
-            let fog = MathLib.clamp(seg.p1.z / (ENGINE_CFG.DRAW_DIST * ENGINE_CFG.SEGMENT_LEN), 0, 1);
-            if (fog > 0.05) {
-                this.ctxWorld.fillStyle = `${ENGINE_CFG.COLORS.FOG_BASE} ${fog * 1.5})`;
-                this.ctxWorld.fillRect(0, seg.p2.sy, this.w, sy1V - seg.p2.sy);
-            }
-
-            // Update clipping plane
-            clipY = seg.p1.sy;
-
-            // Queue sprites for back-to-front rendering later
-            for (let s of seg.sprites) {
-                spriteQueue.push({ seg: seg, spr: s, fog: fog });
-            }
-        }
-
-        // ----------------------------------------------------------------------------------------------------------------
-        // RENDER SPRITES (Painter's Algorithm: Back to Front)
-        // ----------------------------------------------------------------------------------------------------------------
-        
-        spriteQueue.sort((a,b) => b.seg.p1.z - a.seg.p1.z);
-        
-        for(let itm of spriteQueue) {
-            let seg = itm.seg;
-            let spr = itm.spr;
-            
-            let sx = seg.p1.sx + (spr.offset * seg.p1.w);
-            let sy = seg.p1.sy;
-            
-            // If sprite is marked as a valley object, project it far below
-            if (spr.isValley) {
-                sy = this.h/2 - (seg.p1.scale * (seg.y - ENGINE_CFG.VALLEY_DEPTH - camY) * this.h/2);
-            }
-            
-            let scl = seg.p1.scale * this.w / 2;
-            
-            // Dispatch to specific drawing function
-            spr.draw(this.ctxWorld, sx, sy, scl);
-
-            // Apply Fog to sprites
-            if (itm.fog > 0.05) {
-                let bw = 8000 * scl;
-                let bh = 15000 * scl;
-                this.ctxWorld.fillStyle = `${ENGINE_CFG.COLORS.FOG_BASE} ${itm.fog * 1.2})`;
-                this.ctxWorld.fillRect(sx - bw/2, sy - bh, bw, bh);
-            }
-        }
-
-        // Restore context matrix
-        this.ctxWorld.restore();
-
-        // ----------------------------------------------------------------------------------------------------------------
-        // UI / SCREEN EFFECTS
-        // ----------------------------------------------------------------------------------------------------------------
-        
-        // CSS Speed Lines
-        let spdNode = document.getElementById('fx-speed');
-        if (player.velZ > 25000) {
-            spdNode.style.opacity = (player.velZ - 25000) / 15000;
-            let zm = 100 + ((player.velZ - 25000) / 400);
-            spdNode.style.backgroundSize = `${zm}% ${zm}%`;
-        } else {
-            spdNode.style.opacity = 0;
-        }
-    }
+  g.userData = {isBeacon:true, core:coreMesh, ring:ring};
+  return g;
 }
 
+/* -------------------------
+   Player (third-person)
+   ------------------------- */
+const player = {
+  obj: null,
+  velocity: new THREE.Vector3(),
+  onGround: false,
+  health: 100,
+  oxygen: 100,
+  stamina: 100,
+  pos: new THREE.Vector3(0,0,0),
+  rotation: 0,
+  sprinting: false,
+  lastJump: 0
+};
 
-// ========================================================================================================================
-// SECTION 9: GAME MANAGER & STATE MACHINE
-// Orchestrates initialization, state transitions, and the main game loop.
-// ========================================================================================================================
+function createPlayer(){
+  if(player.obj) {
+    scene.remove(player.obj);
+  }
+  const group = new THREE.Group();
+  const bodyGeo = new THREE.CapsuleGeometry(0.6, 1.2, 6, 12);
+  const bodyMat = new THREE.MeshStandardMaterial({color:0xd9c7b8, roughness:0.9});
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.castShadow = true;
+  body.receiveShadow = true;
+  body.position.y = CONFIG.playerHeight;
+  group.add(body);
 
-const GameManager = {
-    state: 'BOOT',
-    lastTime: performance.now(),
-    
-    // Core Modules
-    World: new WorldMatrix(),
-    Player: new PlayerController(),
-    Render: new RenderEngine(),
+  // helmet
+  const helmGeo = new THREE.SphereGeometry(0.6, 16, 12);
+  const helmMat = new THREE.MeshStandardMaterial({color:0x222222, metalness:0.2, roughness:0.2});
+  const helm = new THREE.Mesh(helmGeo, helmMat);
+  helm.position.y = CONFIG.playerHeight + 0.6;
+  group.add(helm);
 
-    init: function() {
-        console.log("INITIALIZING WHITTIER ENGINE v5.0 MAXIMUM OVERDRIVE...");
-        
-        // Handle window resizing
-        window.addEventListener('resize', () => { 
-            this.Render.resize(); 
-        });
-        
-        // Setup the crucial activation overlay to prevent Web Audio issues and interaction bugs
-        const activateOverlay = document.getElementById('activation-overlay');
-        const triggerActivation = () => {
-            if (this.state !== 'BOOT') return;
-            
-            // Hide the overlay
-            activateOverlay.style.display = 'none';
-            
-            // Force Audio Context creation safely inside user gesture
-            try { SFX.init(); } catch(e) { console.warn("Audio Context init failed", e); }
-            
-            // Jump directly to main menu
-            this.setState('MENU');
-        };
-        
-        // Bind activation to multiple event types for robustness
-        activateOverlay.addEventListener('click', triggerActivation);
-        window.addEventListener('keydown', (e) => { 
-            if (e.code === 'Space' || e.code === 'Enter') triggerActivation(); 
-        });
+  group.position.set(0, 200, 0);
+  group.name = "player";
+  group.castShadow = true;
+  scene.add(group);
+  player.obj = group;
+  player.pos.copy(group.position);
+}
 
-        // Setup Main Menu buttons
-        document.getElementById('btn-deploy').addEventListener('click', () => {
-            this.setState('PLAY');
-        });
-        document.getElementById('btn-retry').addEventListener('click', () => {
-            this.setState('MENU');
-        });
+/* -------------------------
+   Camera rig (third-person follow)
+   ------------------------- */
+const camTarget = new THREE.Object3D();
+scene.add(camTarget);
 
-        // Kick off the loop
-        requestAnimationFrame(time => this.loop(time));
-    },
+function updateCamera(dt){
+  // desired camera position behind player
+  const targetPos = new THREE.Vector3();
+  targetPos.copy(player.pos);
+  const behind = new THREE.Vector3(Math.sin(player.rotation), 0, Math.cos(player.rotation)).multiplyScalar(-CONFIG.cameraDistance);
+  targetPos.add(new THREE.Vector3(0, CONFIG.cameraHeight, 0)).add(behind);
 
-    setState: function(newState) {
-        this.state = newState;
-        
-        // Reset DOM elements visibility
-        document.getElementById('menu-main').style.display = 'none';
-        document.getElementById('menu-death').style.display = 'none';
-        document.getElementById('hud-container').style.display = 'none';
+  // smooth lerp
+  camera.position.lerp(targetPos, clamp(dt*6, 0, 1));
+  // look at player
+  const lookAt = new THREE.Vector3().copy(player.pos).add(new THREE.Vector3(0, CONFIG.cameraHeight*0.6, 0));
+  camera.lookAt(lookAt);
+}
 
-        if(newState === 'MENU') {
-            document.getElementById('menu-main').style.display = 'flex';
-            this.World.build();
-            this.Player.reset();
-            // Pre-render world to act as a background for the menu
-            this.Render.render(this.World, this.Player, 0);
-            SFX.resume();
-        }
-        else if(newState === 'PLAY') {
-            document.getElementById('hud-container').style.display = 'block';
-            SFX.resume();
-        }
-        else if(newState === 'DEATH') {
-            document.getElementById('menu-death').style.display = 'flex';
-            // Update final score text
-            document.getElementById('death-score').innerHTML = `${this.Player.score} <span class="hud-unit" style="color:#FFF;">M</span>`;
-        }
-    },
+/* -------------------------
+   Input handling
+   ------------------------- */
+const keys = {};
+window.addEventListener('keydown', (e)=>{ keys[e.key.toLowerCase()] = true; });
+window.addEventListener('keyup', (e)=>{ keys[e.key.toLowerCase()] = false; });
 
-    updateHUD: function() {
-        // Update HP Bar
-        const hpBar = document.getElementById('hp-bar');
-        hpBar.style.width = `${this.Player.hp}%`;
-        hpBar.style.background = this.Player.hp < 40 ? '#FF2222' : '#00FF55';
-        hpBar.style.boxShadow = `0 0 12px ${this.Player.hp < 40 ? '#FF2222' : '#00FF55'}`;
-        
-        // Update Stamina Bar
-        const stBar = document.getElementById('st-bar');
-        stBar.style.width = `${this.Player.stamina}%`;
-        stBar.style.background = this.Player.stamina < 25 ? '#FF2222' : '#00AAFF';
-        stBar.style.boxShadow = `0 0 12px ${this.Player.stamina < 25 ? '#FF2222' : '#00AAFF'}`;
-        
-        // Update Telemetry Text
-        document.getElementById('hud-vel').innerHTML = `${Math.floor(this.Player.velZ / 250)} <span class="hud-unit">KM/H</span>`;
-        document.getElementById('hud-dist').innerHTML = `${this.Player.score.toString().padStart(5, '0')} <span class="hud-unit">M</span>`;
-        
-        // Update Lane Tracker Dots
-        document.querySelectorAll('.lane-dot').forEach((el, index) => {
-            if(index === this.Player.lane) {
-                el.classList.add('active');
-            } else {
-                el.classList.remove('active');
-            }
-        });
+let pointerLocked = false;
+const pointerControls = new THREE.PointerLockControls(camera, document.body);
+document.addEventListener('click', ()=> {
+  if(!pointerLocked) {
+    pointerControls.lock();
+  }
+});
+pointerControls.addEventListener('lock', ()=> { pointerLocked = true; });
+pointerControls.addEventListener('unlock', ()=> { pointerLocked = false; });
 
-        // Proximity Warning System (Detect if hazard is in player's lane ahead)
-        let checkSeg = this.World.getSeg(this.Player.z + ENGINE_CFG.SEGMENT_LEN * 2);
-        let hazardIncoming = checkSeg.sprites.some(s => s.hazard && s.lane === this.Player.lane);
-        document.getElementById('warning-prompt').style.opacity = hazardIncoming ? 1 : 0;
-    },
+/* -------------------------
+   Physics helpers
+   ------------------------- */
+const raycaster = new THREE.Raycaster();
+function sampleTerrainHeight(x,z){
+  if(!terrainMesh) return 0;
+  // convert world x,z to uv on plane
+  const size = CONFIG.terrainSize;
+  const seg = CONFIG.terrainSegments;
+  const step = size / seg;
+  const ix = Math.floor((x + size/2) / step);
+  const iz = Math.floor((z + size/2) / step);
+  const grid = seg + 1;
+  const idx = iz * grid + ix;
+  const pos = terrainMesh.geometry.attributes.position;
+  if(idx < 0 || idx >= pos.count) return -1000;
+  return pos.getY(idx);
+}
 
-    loop: function(timestamp) {
-        let dt = (timestamp - this.lastTime) / 1000;
-        this.lastTime = timestamp;
-        
-        // Cap delta time to prevent physics explosions when tab is inactive or browser lags
-        if(dt > 0.1) dt = 0.016; 
+/* -------------------------
+   Movement & update
+   ------------------------- */
+let lastTime = now();
+let accumulatedTime = 0;
+let missionBeacons = [];
+let missionIndex = 0;
+let missionActive = false;
+let missionStartTime = 0;
+let missionTimer = 0;
+let wireframeMode = false;
+let debugMode = false;
 
-        // Always update inputs
-        IO.update();
-
-        // ----------------------------------------------------------------------------------------------------------------
-        // STATE: BOOT (Waiting for interaction)
-        // ----------------------------------------------------------------------------------------------------------------
-        if (this.state === 'BOOT') {
-            // Background is black, overlay handles click
-            // Just doing a slow idle pan for effect if desired, but static is fine
-        }
-        
-        // ----------------------------------------------------------------------------------------------------------------
-        // STATE: MENU (Idle flyby)
-        // ----------------------------------------------------------------------------------------------------------------
-        else if (this.state === 'MENU') {
-            // Move camera forward slowly
-            this.Player.z += 8000 * dt; 
-            
-            // Loop Z
-            if(this.Player.z >= this.World.totalLength) {
-                this.Player.z -= this.World.totalLength;
-            }
-            
-            SFX.updateWind(0.2); // Low ambient wind
-            this.Render.render(this.World, this.Player, dt);
-        }
-        
-        // ----------------------------------------------------------------------------------------------------------------
-        // STATE: PLAY (Active Game Loop)
-        // ----------------------------------------------------------------------------------------------------------------
-        else if (this.state === 'PLAY') {
-            // 1. Process physics and logic
-            this.Player.update(dt, this.World);
-            
-            // 2. Adjust dynamic audio based on velocity
-            SFX.updateWind(this.Player.velZ / ENGINE_CFG.PHYSICS.MAX_SPEED);
-            
-            // 3. Update DOM UI
-            this.updateHUD();
-            
-            // 4. Draw frame
-            this.Render.render(this.World, this.Player, dt);
-        }
-        
-        // ----------------------------------------------------------------------------------------------------------------
-        // STATE: DEATH (Dramatic crash fall)
-        // ----------------------------------------------------------------------------------------------------------------
-        else if (this.state === 'DEATH') {
-            // Rapid deceleration
-            this.Player.velZ *= 0.92;
-            this.Player.z += this.Player.velZ * dt;
-            
-            // Drop camera to the floor
-            this.Player.y = MathLib.lerp(this.Player.y, -1600, dt * 6); 
-            
-            // Look down at the floor
-            this.Player.headBob = -MathLib.HALF_PI; 
-            
-            SFX.updateWind(0); // Cut wind sound
-            this.Render.render(this.World, this.Player, dt);
-        }
-
-        // Request next frame
-        requestAnimationFrame(time => this.loop(time));
+function update(dt){
+  // oxygen drain
+  if(missionActive){
+    player.oxygen -= (CONFIG.oxygenDrainRate/60) * dt;
+    if(player.oxygen <= 0){
+      player.oxygen = 0;
+      player.health -= (CONFIG.healthDrainRate/60) * dt;
     }
-};
+  } else {
+    // slow regen when not active
+    player.oxygen = clamp(player.oxygen + (0.5/60)*dt, 0, 100);
+  }
 
-// ========================================================================================================================
-// MASSIVE DATA PADDING ARRAYS & ALLOCATIONS
-// Defines dense navigation meshes and shader definitions to fulfill structural complexity requirements.
-// ========================================================================================================================
-const _SYS_NAV_MESH = [
-    [1,1,1,1,1], [1,0,0,0,1], [1,1,0,1,1], [2,2,0,2,2], [2,0,0,0,2], [2,2,2,2,2], 
-    [3,3,3,3,3], [3,0,1,0,3], [3,1,1,1,3], [4,4,4,4,4], [4,0,2,0,4], [4,2,2,2,4],
-    [5,5,5,5,5], [5,0,0,0,5], [5,1,1,1,5], [6,6,0,6,6], [6,0,0,0,6], [6,6,6,6,6],
-    [7,7,7,7,7], [7,0,1,0,7], [7,1,1,1,7], [8,8,8,8,8], [8,0,2,0,8], [8,2,2,2,8]
-];
+  // input
+  const forward = (keys['w']?1:0) - (keys['s']?1:0);
+  const strafe = (keys['d']?1:0) - (keys['a']?1:0);
+  player.sprinting = keys['shift'];
 
-const _SYS_SHADER_PIPELINE = { 
-    active: true, 
-    passes: 4, 
-    resolution: 'high', 
-    vSync: true,
-    postProcessing: ['vignette', 'scanlines', 'bloom'],
-    buffers: { color: 32, depth: 24, stencil: 8 }
-};
+  // compute movement vector relative to camera orientation
+  let move = new THREE.Vector3();
+  if(forward !== 0 || strafe !== 0){
+    // direction based on camera yaw
+    const camYaw = Math.atan2(camera.position.x - player.pos.x, camera.position.z - player.pos.z);
+    const dir = new THREE.Vector3();
+    dir.set(Math.sin(camYaw), 0, Math.cos(camYaw));
+    const right = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), dir).normalize();
+    move.addScaledVector(dir, forward);
+    move.addScaledVector(right, strafe);
+    move.normalize();
+  }
 
-const _SYS_MATERIAL_DICTIONARY = {
-    "STONE": { friction: 0.8, restitution: 0.1, density: 2400 },
-    "WOOD": { friction: 0.6, restitution: 0.3, density: 600 },
-    "METAL": { friction: 0.4, restitution: 0.5, density: 7800 },
-    "FLESH": { friction: 0.9, restitution: 0.1, density: 985 }
-};
+  // speed
+  let speed = CONFIG.playerSpeed * (player.sprinting ? CONFIG.sprintMultiplier : 1.0);
+  // stamina could affect speed (not implemented fully)
+  move.multiplyScalar(speed);
 
-// ========================================================================================================================
-// ENTRY POINT
-// ========================================================================================================================
-window.onload = () => {
-    GameManager.init();
-};
+  // apply horizontal velocity
+  player.velocity.x = lerp(player.velocity.x, move.x, clamp(dt*8,0,1));
+  player.velocity.z = lerp(player.velocity.z, move.z, clamp(dt*8,0,1));
 
+  // gravity
+  player.velocity.y += CONFIG.gravity * dt;
+
+  // jump
+  if(keys[' '] && player.onGround && (now() - player.lastJump) > 0.25){
+    player.velocity.y = CONFIG.jumpSpeed;
+    player.onGround = false;
+    player.lastJump = now();
+  }
+
+  // integrate
+  const nextPos = new THREE.Vector3().copy(player.pos).addScaledVector(player.velocity, dt);
+
+  // collision with terrain
+  const groundY = sampleTerrainHeight(nextPos.x, nextPos.z);
+  const footY = groundY + CONFIG.playerHeight;
+  if(nextPos.y <= footY){
+    nextPos.y = footY;
+    player.velocity.y = 0;
+    player.onGround = true;
+  } else {
+    player.onGround = false;
+  }
+
+  // clamp to world bounds
+  const half = CONFIG.terrainSize/2 - 8;
+  nextPos.x = clamp(nextPos.x, -half, half);
+  nextPos.z = clamp(nextPos.z, -half, half);
+
+  player.pos.copy(nextPos);
+  if(player.obj) player.obj.position.copy(player.pos);
+
+  // rotation: face movement direction if moving
+  if(move.lengthSq() > 0.001){
+    const yaw = Math.atan2(move.x, move.z);
+    player.rotation = lerpAngle(player.rotation, yaw, clamp(dt*8,0,1));
+    player.obj.rotation.y = player.rotation;
+  }
+
+  // update camera
+  updateCamera(dt);
+
+  // update HUD
+  document.getElementById('healthBar').style.width = `${clamp(player.health,0,100)}%`;
+  document.getElementById('healthText').textContent = `${Math.floor(clamp(player.health,0,100))}%`;
+  document.getElementById('oxyBar').style.width = `${clamp(player.oxygen,0,100)}%`;
+  document.getElementById('oxyText').textContent = `${Math.floor(clamp(player.oxygen,0,100))}%`;
+
+  // beacon interactions
+  checkBeaconProximity();
+
+  // mission timer
+  if(missionActive){
+    missionTimer = now() - missionStartTime;
+  }
+
+  // update beacon visuals
+  for(const b of missionBeacons){
+    if(!b.obj) continue;
+    if(b.collected) {
+      b.obj.visible = false;
+      continue;
+    }
+    // animate ring
+    const ring = b.obj.userData.ring;
+    const core = b.obj.userData.core;
+    if(ring) ring.rotation.z += dt * 0.8;
+    if(core) core.material.emissiveIntensity = 1.0 + Math.sin(now()*2 + b.pos.x*0.01)*0.6;
+  }
+}
+
+/* -------------------------
+   Angle lerp helper
+   ------------------------- */
+function lerpAngle(a,b,t){
+  let diff = b - a;
+  while(diff < -Math.PI) diff += Math.PI*2;
+  while(diff > Math.PI) diff -= Math.PI*2;
+  return a + diff * t;
+}
+
+/* -------------------------
+   Beacon proximity & mission logic
+   ------------------------- */
+function checkBeaconProximity(){
+  if(!missionActive) return;
+  const reach = 3.2;
+  for(const b of missionBeacons){
+    if(b.collected) continue;
+    const d = b.pos.distanceTo(player.pos);
+    if(d < reach){
+      // collect
+      b.collected = true;
+      log("Collected artifact at " + b.pos.x.toFixed(1) + ", " + b.pos.z.toFixed(1));
+      missionProgress++;
+      updateMissionUI();
+      // reward: oxygen boost
+      player.oxygen = clamp(player.oxygen + 18, 0, 100);
+      // spawn small particle burst
+      spawnParticles(b.pos.x, b.pos.y + 1.2, b.pos.z);
+      // check completion
+      if(missionProgress >= CONFIG.missionCount){
+        completeMission();
+      }
+    }
+  }
+}
+
+/* -------------------------
+   Particles (simple)
+   ------------------------- */
+const particles = [];
+const particleGroup = new THREE.Group();
+scene.add(particleGroup);
+
+function spawnParticles(x,y,z){
+  for(let i=0;i<18;i++){
+    const pGeo = new THREE.SphereGeometry(0.06,6,6);
+    const pMat = new THREE.MeshBasicMaterial({color:0xffb07a});
+    const p = new THREE.Mesh(pGeo, pMat);
+    p.position.set(x,y,z);
+    p.userData = {
+      vel: new THREE.Vector3((Math.random()-0.5)*2, Math.random()*2, (Math.random()-0.5)*2),
+      life: 1.0
+    };
+    particleGroup.add(p);
+    particles.push(p);
+  }
+}
+
+/* -------------------------
+   Particle update
+   ------------------------- */
+function updateParticles(dt){
+  for(let i=particles.length-1;i>=0;i--){
+    const p = particles[i];
+    p.userData.life -= dt;
+    if(p.userData.life <= 0){
+      particleGroup.remove(p);
+      p.geometry.dispose();
+      p.material.dispose();
+      particles.splice(i,1);
+      continue;
+    }
+    p.position.addScaledVector(p.userData.vel, dt);
+    p.material.opacity = clamp(p.userData.life,0,1);
+    p.material.transparent = true;
+  }
+}
+
+/* -------------------------
+   Mission system
+   ------------------------- */
+let missionProgress = 0;
+function startMission(){
+  missionActive = true;
+  missionStartTime = now();
+  missionTimer = 0;
+  missionProgress = 0;
+  missionIndex = 0;
+  document.getElementById('missionTitle').textContent = `Collect ${CONFIG.missionCount} artifacts`;
+  log("Mission started: Collect artifacts scattered across the terrain.");
+  // reveal markers on minimap
+  updateMinimap();
+}
+
+function completeMission(){
+  missionActive = false;
+  const timeTaken = Math.floor(missionTimer);
+  log(`Mission complete! Time: ${formatTime(timeTaken)}. Rewards: oxygen refill.`);
+  player.oxygen = clamp(player.oxygen + 40, 0, 100);
+  document.getElementById('missionTitle').textContent = `Mission complete! Time ${formatTime(timeTaken)}`;
+}
+
+/* -------------------------
+   Minimap rendering
+   ------------------------- */
+const miniCanvas = document.getElementById('mini');
+const miniCtx = miniCanvas.getContext('2d');
+
+function updateMinimap(){
+  const w = miniCanvas.width;
+  const h = miniCanvas.height;
+  miniCtx.clearRect(0,0,w,h);
+  // background
+  miniCtx.fillStyle = '#1b0b0b';
+  miniCtx.fillRect(0,0,w,h);
+  // draw terrain gradient
+  const grd = miniCtx.createLinearGradient(0,0,w,h);
+  grd.addColorStop(0,'#3b1b12');
+  grd.addColorStop(1,'#8b4b2f');
+  miniCtx.fillStyle = grd;
+  miniCtx.fillRect(0,0,w,h);
+
+  // draw beacons
+  for(const b of missionBeacons){
+    if(b.collected) continue;
+    const p = worldToMini(b.pos.x, b.pos.z, w, h);
+    miniCtx.fillStyle = '#ff6f3c';
+    miniCtx.beginPath();
+    miniCtx.arc(p.x, p.y, 4, 0, Math.PI*2);
+    miniCtx.fill();
+  }
+  // draw player
+  const pp = worldToMini(player.pos.x, player.pos.z, w, h);
+  miniCtx.fillStyle = '#a6f0ff';
+  miniCtx.beginPath();
+  miniCtx.arc(pp.x, pp.y, 5, 0, Math.PI*2);
+  miniCtx.fill();
+  // draw facing direction
+  miniCtx.strokeStyle = '#a6f0ff';
+  miniCtx.beginPath();
+  miniCtx.moveTo(pp.x, pp.y);
+  const dir = new THREE.Vector3(Math.sin(player.rotation),0,Math.cos(player.rotation));
+  const p2 = worldToMini(player.pos.x + dir.x*12, player.pos.z + dir.z*12, w, h);
+  miniCtx.lineTo(p2.x, p2.y);
+  miniCtx.stroke();
+}
+
+function worldToMini(x,z,w,h){
+  const half = CONFIG.terrainSize/2;
+  const nx = (x + half) / CONFIG.terrainSize;
+  const nz = (z + half) / CONFIG.terrainSize;
+  return { x: nx * w, y: (1 - nz) * h };
+}
+
+/* -------------------------
+   Interaction (E)
+   ------------------------- */
+window.addEventListener('keydown', (e)=>{
+  if(e.key.toLowerCase() === 'e'){
+    // interact: check for nearby props with userData.interactable
+    const reach = 3.5;
+    let found = false;
+    for(const c of propsGroup.children){
+      const d = c.position.distanceTo(player.pos);
+      if(d < reach && c.userData && c.userData.interactable){
+        found = true;
+        // call interaction
+        if(typeof c.userData.onInteract === 'function') c.userData.onInteract();
+      }
+    }
+    if(!found) log("No interactable object nearby.");
+  }
+});
+
+/* -------------------------
+   Save / Load
+   ------------------------- */
+function saveGame(){
+  const state = {
+    seed: CONFIG.seed,
+    player: {
+      pos: player.pos.toArray(),
+      health: player.health,
+      oxygen: player.oxygen
+    },
+    mission: {
+      active: missionActive,
+      progress: missionProgress,
+      beacons: missionBeacons.map(b => ({x:b.pos.x,y:b.pos.y,z:b.pos.z, collected: b.collected}))
+    },
+    time: Date.now()
+  };
+  localStorage.setItem('milesmars_save', JSON.stringify(state));
+  log("Game saved.");
+}
+function loadGame(){
+  const raw = localStorage.getItem('milesmars_save');
+  if(!raw){ log("No save found."); return; }
+  try{
+    const state = JSON.parse(raw);
+    // apply
+    player.pos.fromArray(state.player.pos);
+    player.health = state.player.health;
+    player.oxygen = state.player.oxygen;
+    missionActive = state.mission.active;
+    missionProgress = state.mission.progress;
+    // restore beacons
+    for(let i=0;i<missionBeacons.length;i++){
+      if(state.mission.beacons[i]) missionBeacons[i].collected = state.mission.beacons[i].collected;
+    }
+    log("Game loaded.");
+  }catch(e){
+    log("Failed to load save.");
+  }
+}
+
+/* -------------------------
+   UI wiring
+   ------------------------- */
+document.getElementById('startBtn').addEventListener('click', ()=> {
+  startMission();
+  document.getElementById('splash').style.display = 'none';
+});
+document.getElementById('splashStart').addEventListener('click', ()=> {
+  startMission();
+  document.getElementById('splash').style.display = 'none';
+});
+document.getElementById('splashLearn').addEventListener('click', ()=> {
+  alert("WASD to move, Shift to sprint, Space to jump, Mouse to look, E to interact. Collect artifacts to complete the mission.");
+});
+document.getElementById('resetBtn').addEventListener('click', ()=> {
+  location.reload();
+});
+document.getElementById('toggleWire').addEventListener('click', ()=> {
+  wireframeMode = !wireframeMode;
+  terrainMesh.material.wireframe = wireframeMode;
+  for(const p of propsGroup.children) if(p.material) p.material.wireframe = wireframeMode;
+});
+document.getElementById('toggleDebug').addEventListener('click', ()=> {
+  debugMode = !debugMode;
+  log("Debug mode " + (debugMode ? "on" : "off"));
+});
+document.getElementById('saveBtn').addEventListener('click', saveGame);
+document.getElementById('loadBtn').addEventListener('click', loadGame);
+
+/* -------------------------
+   Mission UI update
+   ------------------------- */
+function updateMissionUI(){
+  document.getElementById('missionTitle').textContent = `Artifacts: ${missionProgress}/${CONFIG.missionCount}`;
+  updateMinimap();
+}
+
+/* -------------------------
+   Animation loop
+   ------------------------- */
+let rafId;
+function animate(){
+  const t = now();
+  const dt = clamp(t - lastTime, 0, 0.05);
+  lastTime = t;
+
+  update(dt);
+  updateParticles(dt);
+
+  // render
+  renderer.render(scene, camera);
+
+  // update minimap occasionally
+  if(Math.floor(t*2) % 1 === 0) updateMinimap();
+
+  rafId = requestAnimationFrame(animate);
+}
+
+/* -------------------------
+   Initialization
+   ------------------------- */
+function init(){
+  // set seed
+  Math.seedrandom = Math.seedrandom || function(){};
+  // create player
+  createPlayer();
+  // generate terrain
+  generateTerrain();
+  // initial camera
+  camera.position.set(player.pos.x + 6, player.pos.y + CONFIG.cameraHeight, player.pos.z + 6);
+  camera.lookAt(player.pos);
+
+  // place player at a safe spawn
+  const spawn = findSpawnPoint();
+  player.pos.copy(spawn);
+  player.obj.position.copy(spawn);
+
+  // add a simple sky gradient via large sphere
+  const skyGeo = new THREE.SphereGeometry(2000, 32, 16);
+  const skyMat = new THREE.MeshBasicMaterial({color:0x1b0b0b, side:THREE.BackSide});
+  const sky = new THREE.Mesh(skyGeo, skyMat);
+  scene.add(sky);
+
+  // add subtle dust particles in the sky
+  createDustField();
+
+  // initial HUD
+  document.getElementById('missionTitle').textContent = `Ready — ${CONFIG.missionCount} artifacts`;
+  log("World generated. Seed: " + CONFIG.seed);
+  updateMinimap();
+
+  // start loop
+  lastTime = now();
+  animate();
+}
+
+/* -------------------------
+   Spawn finder
+   ------------------------- */
+function findSpawnPoint(){
+  // find a relatively flat area near center
+  const size = CONFIG.terrainSize;
+  for(let r=0;r<2000;r++){
+    const x = (Math.random()-0.5) * size * 0.2;
+    const z = (Math.random()-0.5) * size * 0.2;
+    const y = sampleTerrainHeight(x,z);
+    if(y > -40 && y < 80) return new THREE.Vector3(x, y + CONFIG.playerHeight, z);
+  }
+  return new THREE.Vector3(0, sampleTerrainHeight(0,0) + CONFIG.playerHeight, 0);
+}
+
+/* -------------------------
+   Dust field
+   ------------------------- */
+function createDustField(){
+  const dustGeo = new THREE.BufferGeometry();
+  const count = 1200;
+  const positions = new Float32Array(count*3);
+  for(let i=0;i<count;i++){
+    positions[i*3+0] = (Math.random()-0.5) * CONFIG.terrainSize * 0.9;
+    positions[i*3+1] = 20 + Math.random()*80;
+    positions[i*3+2] = (Math.random()-0.5) * CONFIG.terrainSize * 0.9;
+  }
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const dustMat = new THREE.PointsMaterial({color:0xffd8c8, size:1.8, transparent:true, opacity:0.06});
+  const dust = new THREE.Points(dustGeo, dustMat);
+  scene.add(dust);
+}
+
+/* -------------------------
+   Window resize
+   ------------------------- */
+window.addEventListener('resize', onWindowResize);
+function onWindowResize(){
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+/* -------------------------
+   Debug helpers (optional)
+   ------------------------- */
+function debugDrawGrid(){
+  const grid = new THREE.GridHelper(400, 40, 0x333333, 0x222222);
+  scene.add(grid);
+}
+
+/* -------------------------
+   Start
+   ------------------------- */
+init();
+
+/* -------------------------
+   Extra: simple seeded random (fallback)
+   ------------------------- */
+(function(){
+  // seedrandom fallback if not present
+  if(typeof Math.seedrandom !== 'function'){
+    Math.seedrandom = function(seed){
+      let s = seed || CONFIG.seed;
+      return function(){
+        s = (s * 9301 + 49297) % 233280;
+        return s / 233280;
+      };
+    };
+  }
+})();
+
+/* -------------------------
+   Additional polish: ambient audio (placeholder)
+   ------------------------- */
+(function createAudio(){
+  try{
+    const listener = new THREE.AudioListener();
+    camera.add(listener);
+    const audio = new THREE.Audio(listener);
+    // placeholder oscillator via WebAudio API
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = 40;
+    g.gain.value = 0.0008;
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.start();
+    // keep reference to stop later if needed
+    window._milesmars_audio = {ctx,o,g};
+  }catch(e){
+    // ignore audio errors
+  }
+})();
+
+/* -------------------------
+   Final touches: mission markers in DOM
+   ------------------------- */
+function createDOMMarkers(){
+  // create markers for beacons
+  for(const b of missionBeacons){
+    const el = document.createElement('div');
+    el.className = 'marker';
+    el.innerHTML = '<div class="dot"></div>';
+    document.body.appendChild(el);
+    b.dom = el;
+  }
+}
+createDOMMarkers();
+
+/* -------------------------
+   Update DOM markers each frame
+   ------------------------- */
+function updateDOMMarkers(){
+  for(const b of missionBeacons){
+    if(!b.dom) continue;
+    if(b.collected){ b.dom.style.display = 'none'; continue; }
+    const screen = worldToScreen(b.pos.x, b.pos.y + 1.6, b.pos.z);
+    if(screen.z > 1 || screen.z < 0){
+      b.dom.style.display = 'none';
+    } else {
+      b.dom.style.display = 'block';
+      b.dom.style.left = `${screen.x}px`;
+      b.dom.style.top = `${screen.y}px`;
+    }
+  }
+}
+function worldToScreen(x,y,z){
+  const vec = new THREE.Vector3(x,y,z);
+  vec.project(camera);
+  const xN = (vec.x + 1) / 2 * window.innerWidth;
+  const yN = (-vec.y + 1) / 2 * window.innerHeight;
+  return {x: xN, y: yN, z: vec.z};
+}
+
+/* -------------------------
+   Extend animate to update DOM markers and particles
+   ------------------------- */
+(function wrapAnimate(){
+  const original = animate;
+  animate = function(){
+    const t = now();
+    const dt = clamp(t - lastTime, 0, 0.05);
+    lastTime = t;
+
+    update(dt);
+    updateParticles(dt);
+    updateDOMMarkers();
+
+    renderer.render(scene, camera);
+    if(Math.floor(t*2) % 1 === 0) updateMinimap();
+    rafId = requestAnimationFrame(animate);
+  };
+  // restart loop with wrapped animate
+  cancelAnimationFrame(rafId);
+  lastTime = now();
+  animate();
+})();
+
+/* -------------------------
+   End of file
+   ------------------------- */
 </script>
 </body>
 </html>
