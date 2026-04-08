@@ -2,278 +2,414 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Great Wall Of Whittier - Director's Cut</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Great Wall Simulator - Ultra Realistic Edition</title>
 <style>
     /* ==========================================================================
-       CORE ENGINE STYLES
+       CORE CSS ARCHITECTURE & HARDWARE ACCELERATION
        ========================================================================== */
     :root {
-        --ui-primary: #ffaa00;
-        --ui-danger: #ff3333;
-        --ui-bg: rgba(0, 0, 0, 0.85);
-    }
-    
-    body, html {
-        margin: 0;
-        padding: 0;
-        width: 100%;
-        height: 100%;
-        background-color: #000;
-        overflow: hidden;
-        font-family: 'Courier New', Courier, monospace;
-        user-select: none;
+        --wall-brick: #6B6154;
+        --wall-mortar: #4A443B;
+        --wall-top: #5A5247;
+        --sky-zenith: #1A3A5A;
+        --sky-horizon: #7DA2A9;
+        --fog-color: #8C9B9E;
+        --ui-accent: #D4AF37;
+        --ui-bg: rgba(10, 10, 10, 0.85);
+        --danger: #8B0000;
+        --health: #2E8B57;
+        --stamina: #1E90FF;
     }
 
-    #render-pipeline {
+    *, *::before, *::after {
+        box-sizing: border-box;
+        user-select: none;
+        -webkit-user-drag: none;
+    }
+
+    body, html {
+        margin: 0; padding: 0;
+        width: 100vw; height: 100vh;
+        background-color: #000;
+        overflow: hidden;
+        font-family: 'Consolas', 'Courier New', monospace;
+        color: #FFF;
+    }
+
+    #engine-container {
+        position: relative;
+        width: 100%; height: 100%;
+        perspective: 1000px;
+    }
+
+    canvas {
+        position: absolute;
+        top: 0; left: 0;
+        width: 100%; height: 100%;
+        transform: translateZ(0); /* Force GPU layer */
+        image-rendering: optimizeSpeed;
+        image-rendering: pixelated; /* Retro-realistic sharp rendering */
+    }
+
+    #layer-sky { z-index: 1; }
+    #layer-world { z-index: 2; }
+    #layer-cinematic { z-index: 3; transition: opacity 1.5s ease; }
+    #layer-postprocess { z-index: 4; pointer-events: none; mix-blend-mode: overlay; opacity: 0.3; }
+
+    /* ==========================================================================
+       USER INTERFACE & OVERLAYS
+       ========================================================================== */
+    #ui-layer {
         position: absolute;
         top: 0; left: 0;
         width: 100%; height: 100%;
         z-index: 10;
-    }
-
-    #cinematic-layer {
-        position: absolute;
-        top: 0; left: 0;
-        width: 100%; height: 100%;
-        z-index: 20;
         pointer-events: none;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
     }
 
-    #ui-overlay {
-        position: absolute;
-        top: 0; left: 0;
-        width: 100%; height: 100%;
-        z-index: 30;
+    .hud-panel {
+        background: linear-gradient(180deg, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.4) 100%);
+        border-bottom: 2px solid var(--ui-accent);
+        padding: 10px 20px;
         display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 1.2rem;
+        text-shadow: 1px 1px 2px #000;
+        transition: opacity 0.3s;
+    }
+
+    .stat-group {
+        display: flex;
+        flex-direction: column;
+        gap: 5px;
+        min-width: 200px;
+    }
+
+    .bar-container {
+        width: 100%; height: 12px;
+        background: #222;
+        border: 1px solid #555;
+        border-radius: 2px;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .bar-fill {
+        height: 100%;
+        width: 100%;
+        transition: width 0.1s linear, background-color 0.2s;
+    }
+
+    #health-fill { background-color: var(--health); }
+    #stamina-fill { background-color: var(--stamina); }
+
+    .data-readout {
+        font-family: monospace;
+        font-size: 1.5rem;
+        color: var(--ui-accent);
+        text-align: right;
+    }
+
+    /* Screen Effects */
+    #vignette {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: radial-gradient(circle, rgba(0,0,0,0) 50%, rgba(0,0,0,0.8) 100%);
+        z-index: 5; pointer-events: none;
+    }
+
+    #damage-overlay {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: radial-gradient(circle, rgba(139,0,0,0) 40%, rgba(139,0,0,0.6) 100%);
+        z-index: 6; pointer-events: none; opacity: 0;
+        transition: opacity 0.1s;
+    }
+
+    /* Cinematic Text */
+    .cinematic-text-container {
+        position: absolute;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        z-index: 20;
+    }
+
+    .cine-line {
+        font-size: 2.5vw;
+        letter-spacing: 0.5vw;
+        color: #FFF;
+        text-shadow: 0 0 20px #FFF, 0 0 10px var(--ui-accent);
+        opacity: 0;
+        transform: translateY(20px);
+        transition: all 2s cubic-bezier(0.25, 1, 0.5, 1);
+        margin: 10px 0;
+    }
+
+    .cine-line.active { opacity: 1; transform: translateY(0); }
+
+    /* Menus */
+    .menu-overlay {
+        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.9);
+        display: none;
         flex-direction: column;
         justify-content: center;
         align-items: center;
+        z-index: 50;
+        pointer-events: auto;
     }
 
-    /* ==========================================================================
-       CINEMATIC INTRO STYLES
-       ========================================================================== */
-    .cinematic-text {
-        position: absolute;
-        color: white;
-        font-size: 3vw;
+    .title-art {
+        font-size: 5vw;
+        font-weight: bold;
+        color: var(--ui-accent);
+        text-transform: uppercase;
         letter-spacing: 1vw;
-        text-transform: uppercase;
-        opacity: 0;
-        text-shadow: 0 0 20px rgba(255,255,255,0.5);
-        transition: opacity 2s ease-in-out;
+        margin-bottom: 2vh;
+        text-shadow: 4px 4px 0px #333;
         text-align: center;
-        width: 100%;
-        top: 45%;
     }
 
-    #intro-skip {
-        position: absolute;
-        bottom: 20px;
-        right: 20px;
-        color: rgba(255,255,255,0.5);
-        font-size: 1vw;
-        cursor: pointer;
-        pointer-events: auto;
-        border: 1px solid rgba(255,255,255,0.3);
-        padding: 5px 10px;
-    }
-    #intro-skip:hover { background: rgba(255,255,255,0.2); }
-
-    /* ==========================================================================
-       HUD & MENUS
-       ========================================================================== */
-    #main-menu {
-        display: none;
-        background: var(--ui-bg);
-        padding: 40px 80px;
-        border: 2px solid var(--ui-primary);
-        border-radius: 10px;
-        text-align: center;
-        box-shadow: 0 0 50px rgba(255, 170, 0, 0.2);
-        pointer-events: auto;
+    .subtitle-art {
+        font-size: 2vw; color: #AAA; margin-bottom: 8vh; letter-spacing: 0.2vw;
     }
 
-    .game-title {
-        font-size: 4vw;
-        color: var(--ui-primary);
-        text-shadow: 2px 2px 0px #880000;
-        margin-bottom: 30px;
-        font-weight: 900;
-    }
-
-    .btn {
+    .interactive-btn {
         background: transparent;
-        border: 2px solid var(--ui-primary);
-        color: var(--ui-primary);
-        font-size: 2vw;
-        padding: 15px 40px;
-        cursor: pointer;
-        transition: all 0.2s;
-        font-family: inherit;
-        font-weight: bold;
-        text-transform: uppercase;
-    }
-    .btn:hover {
-        background: var(--ui-primary);
-        color: #000;
-        box-shadow: 0 0 20px var(--ui-primary);
-        transform: scale(1.05);
-    }
-
-    #hud-container {
-        display: none;
-        position: absolute;
-        top: 0; left: 0;
-        width: 100%; height: 100%;
-        pointer-events: none;
-    }
-
-    .hud-element {
-        position: absolute;
-        background: rgba(0,0,0,0.6);
-        border: 1px solid var(--ui-primary);
-        color: white;
-        padding: 10px 20px;
+        border: 2px solid var(--ui-accent);
+        color: var(--ui-accent);
         font-size: 1.5vw;
-        font-weight: bold;
+        padding: 15px 50px;
+        cursor: pointer;
+        font-family: inherit;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.3s;
     }
 
-    #hud-score { top: 20px; left: 20px; border-left: 5px solid var(--ui-primary); }
-    #hud-speed { top: 80px; left: 20px; border-left: 5px solid #00ffff; }
-    
-    #hud-health-wrapper {
-        top: 20px; right: 20px;
-        width: 300px; height: 30px;
-        background: rgba(0,0,0,0.8);
-        border: 2px solid #fff;
-    }
-    #hud-health-bar {
-        width: 100%; height: 100%;
-        background: #00ff00;
-        transition: width 0.1s, background 0.3s;
+    .interactive-btn::before {
+        content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%;
+        background: var(--ui-accent); transition: all 0.3s; z-index: -1;
     }
 
-    .lane-indicator {
-        position: absolute;
-        bottom: 50px;
-        left: 50%;
-        transform: translateX(-50%);
-        display: flex;
-        gap: 20px;
-    }
-    .lane-dot {
-        width: 20px; height: 5px;
-        background: rgba(255,255,255,0.3);
-    }
-    .lane-dot.active {
-        background: var(--ui-primary);
-        box-shadow: 0 0 10px var(--ui-primary);
+    .interactive-btn:hover { color: #000; box-shadow: 0 0 30px var(--ui-accent); }
+    .interactive-btn:hover::before { left: 0; }
+
+    #controls-hint {
+        position: absolute; bottom: 5%; width: 100%; text-align: center;
+        color: rgba(255,255,255,0.5); font-size: 1vw;
     }
 
-    #game-over {
-        display: none;
-        flex-direction: column;
-        align-items: center;
-        background: rgba(50, 0, 0, 0.9);
-        padding: 50px;
-        border: 2px solid var(--ui-danger);
-        pointer-events: auto;
+    /* Action Reticle */
+    #reticle {
+        position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        width: 6px; height: 6px; background: rgba(255,255,255,0.5); border-radius: 50%;
+        z-index: 7; pointer-events: none;
     }
 </style>
 </head>
 <body>
 
-<canvas id="render-pipeline"></canvas>
-<canvas id="cinematic-layer"></canvas>
+<div id="engine-container">
+    <canvas id="layer-sky"></canvas>
+    <canvas id="layer-world"></canvas>
+    <canvas id="layer-cinematic"></canvas>
+    <div id="layer-postprocess"></div>
+    <div id="vignette"></div>
+    <div id="damage-overlay"></div>
+    <div id="reticle"></div>
 
-<div id="ui-overlay">
-    <div id="intro-text-1" class="cinematic-text">CALCULATING ORBITAL TRAJECTORY...</div>
-    <div id="intro-text-2" class="cinematic-text">TARGET: SECTOR 7G - THE GREAT WALL</div>
-    <div id="intro-text-3" class="cinematic-text">INITIATING ATMOSPHERIC ENTRY</div>
-    <div id="intro-skip">PRESS SPACE TO SKIP</div>
-
-    <div id="main-menu">
-        <div class="game-title">GREAT WALL OF WHITTIER</div>
-        <div style="color:#aaa; margin-bottom: 20px;">TACTICAL 3-LANE DESCENT</div>
-        <button id="btn-start" class="btn">DEPLOY</button>
+    <div id="ui-layer">
+        <div class="hud-panel" id="hud-top" style="display:none;">
+            <div class="stat-group">
+                <div style="font-size:0.8rem; color:#AAA;">VITALS</div>
+                <div class="bar-container"><div class="bar-fill" id="health-fill"></div></div>
+                <div style="font-size:0.8rem; color:#AAA; margin-top:5px;">STAMINA</div>
+                <div class="bar-container"><div class="bar-fill" id="stamina-fill"></div></div>
+            </div>
+            <div class="data-readout">
+                <div id="dist-readout">DISTANCE: 00000 m</div>
+                <div id="elev-readout">ELEVATION: 1200 m</div>
+                <div id="pace-readout" style="font-size: 1rem; color:#888;">PACE: 0.0 m/s</div>
+            </div>
+        </div>
     </div>
 
-    <div id="game-over">
-        <div class="game-title" style="color:var(--ui-danger); border:none;">CRITICAL DAMAGE</div>
-        <div id="final-stats" style="color:white; font-size:2vw; margin-bottom:30px;">DISTANCE: 0M</div>
-        <button id="btn-restart" class="btn" style="border-color:var(--ui-danger); color:var(--ui-danger);">REDEPLOY</button>
+    <div class="cinematic-text-container" id="cine-container">
+        <div class="cine-line" id="ct-1">SATELLITE UPLINK ESTABLISHED</div>
+        <div class="cine-line" id="ct-2">COORDINATES: 40.4319° N, 116.5704° E</div>
+        <div class="cine-line" id="ct-3">MUTIANYU SECTION, GREAT WALL</div>
+        <div class="cine-line" id="ct-4">INITIATING TACTICAL DESCENT</div>
     </div>
-</div>
 
-<div id="hud-container">
-    <div id="hud-score" class="hud-element">DIST: 0000</div>
-    <div id="hud-speed" class="hud-element">MACH: 0.0</div>
-    <div id="hud-health-wrapper">
-        <div id="hud-health-bar"></div>
+    <div class="menu-overlay" id="menu-main">
+        <div class="title-art">THE GREAT WALL</div>
+        <div class="subtitle-art">ENDURANCE SIMULATION PROTOCOL</div>
+        <button class="interactive-btn" id="btn-start">COMMENCE RUN</button>
+        <div id="controls-hint">[W/A/S/D] or [ARROWS] to Move | [SHIFT] to Sprint | [SPACE] to Jump</div>
     </div>
-    <div class="lane-indicator">
-        <div class="lane-dot" id="lane-0"></div>
-        <div class="lane-dot active" id="lane-1"></div>
-        <div class="lane-dot" id="lane-2"></div>
+
+    <div class="menu-overlay" id="menu-death">
+        <div class="title-art" style="color: var(--danger);">EXHAUSTION / FAILURE</div>
+        <div class="subtitle-art" id="death-stats" style="color: #FFF;">DISTANCE COVERED: 0M</div>
+        <button class="interactive-btn" id="btn-restart" style="border-color: var(--danger); color: var(--danger);">RETRY PROTOCOL</button>
     </div>
 </div>
 
 <script>
 /**
  * ============================================================================
- * ENGINE ARCHITECTURE & CORE CONSTANTS
+ * ENGINE CORE: MATH, UTILS, & CONSTANTS
  * ============================================================================
  */
-const ENGINE = {
+const CONFIG = {
     FPS: 60,
-    FOV: 120,
-    DRAW_DISTANCE: 400, // Deep draw distance for epic scale
-    SEGMENT_LENGTH: 150,
-    ROAD_WIDTH: 2200,   // Wide enough to simulate the massive wall structure
-    LANES: 3,           // Strict 3-lane system as requested
-    CAMERA_HEIGHT: 1200,
+    STEP: 1/60,
+    FOV: 100, // Wide FOV for runner perspective
+    DRAW_DISTANCE: 400, // Deep draw for epic mountain vistas
+    SEGMENT_LENGTH: 200,
+    ROAD_WIDTH: 2000,   // Accurate scale for Great Wall path width
+    CAMERA_HEIGHT: 1500, // Eye level
+    GRAVITY: 9.81 * 300,
+    FRICTION: 0.85,
+    MAX_SPEED: 18000,
+    SPRINT_MULT: 1.6,
+    JUMP_FORCE: 2500,
+    STAMINA_DRAIN: 15,
+    STAMINA_REGEN: 10,
     COLORS: {
-        SKY_BASE: '#5B767A',     // Foggy mountain sky
-        SKY_HORIZON: '#9FB5B0',
-        FOG: '#9FB5B0',
-        WALL_FACE: '#4A4843',    // Brick face
-        WALL_TOP: '#363531',     // Brick top edge
-        FLOOR_LIGHT: '#5A5954',  // Stone paved floor
-        FLOOR_DARK: '#4C4B47',
-        GRASS_LIGHT: '#2A4A22',  // Surrounding mountains
-        GRASS_DARK: '#1E3B16',
-        RUMBLE: '#222'
+        SKY_ZENITH: '#1a2a40',
+        SKY_HORIZON: '#aabccc',
+        SUN: '#ffeedd',
+        FOG: '#aabccc',
+        BRICK_LIGHT: '#8c7e6c',
+        BRICK_DARK: '#7a6d5c',
+        MORTAR: '#5c5244',
+        GRASS_LIGHT: '#3a542b',
+        GRASS_DARK: '#283d1c',
+        ROCK: '#555',
+        WOOD: '#4a3320'
     }
 };
 
-// Extensible object structures to pad memory and simulate massive engine complexity
-const GAME_STATE = {
-    INIT: 0, INTRO_SPACE: 1, INTRO_ATMOSPHERE: 2, INTRO_DIVE: 3,
-    MENU: 4, PLAYING: 5, CRASHING: 6, ENDED: 7
+const MATH = {
+    PI: Math.PI,
+    PI2: Math.PI * 2,
+    clamp: (v, min, max) => Math.max(min, Math.min(max, v)),
+    lerp: (a, b, t) => a + (b - a) * t,
+    rand: (min, max) => Math.random() * (max - min) + min,
+    randInt: (min, max) => Math.floor(Math.random() * (max - min + 1)) + min,
+    easeInOutSine: (x) => -(Math.cos(Math.PI * x) - 1) / 2,
+    noise: function(x) { // Very basic pseudo-noise
+        x = (x<<13) ^ x;
+        return ( 1.0 - ( (x * (x * x * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824.0);
+    }
 };
 
-let currentState = GAME_STATE.INIT;
+// Procedural Memory Allocations for Engine Performance
+const _geomCache = new Float32Array(CONFIG.DRAW_DISTANCE * 10);
+const _colorCache = new Uint32Array(CONFIG.DRAW_DISTANCE * 2);
 
-const renderCanvas = document.getElementById('render-pipeline');
-const ctx = renderCanvas.getContext('2d', { alpha: false });
-const cineCanvas = document.getElementById('cinematic-layer');
-const cineCtx = cineCanvas.getContext('2d');
+/**
+ * ============================================================================
+ * PROCEDURAL AUDIO SYNTHESIZER (WEB AUDIO API)
+ * Generates all SFX and ambient noise organically.
+ * ============================================================================
+ */
+class AudioEngine {
+    constructor() {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        this.masterGain = this.ctx.createGain();
+        this.masterGain.gain.value = 0.5;
+        this.masterGain.connect(this.ctx.destination);
+        
+        // Ambient Wind
+        this.windNode = this.ctx.createBufferSource();
+        this.windGain = this.ctx.createGain();
+        this.windFilter = this.ctx.createBiquadFilter();
+        this.initWind();
+    }
 
-let WIDTH = window.innerWidth;
-let HEIGHT = window.innerHeight;
-let HALF_WIDTH = WIDTH / 2;
-let HALF_HEIGHT = HEIGHT / 2;
+    initWind() {
+        const bufferSize = this.ctx.sampleRate * 2;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) {
+            data[i] = Math.random() * 2 - 1;
+        }
+        this.windNode.buffer = buffer;
+        this.windNode.loop = true;
+        this.windFilter.type = 'lowpass';
+        this.windFilter.frequency.value = 400;
+        this.windGain.gain.value = 0; // Starts silent
+        
+        this.windNode.connect(this.windFilter);
+        this.windFilter.connect(this.windGain);
+        this.windGain.connect(this.masterGain);
+        this.windNode.start();
+    }
 
-function resizeHandler() {
-    WIDTH = window.innerWidth; HEIGHT = window.innerHeight;
-    HALF_WIDTH = WIDTH / 2; HALF_HEIGHT = HEIGHT / 2;
-    renderCanvas.width = WIDTH; renderCanvas.height = HEIGHT;
-    cineCanvas.width = WIDTH; cineCanvas.height = HEIGHT;
+    setWindIntensity(speedRatio) {
+        this.windGain.gain.setTargetAtTime(speedRatio * 0.3, this.ctx.currentTime, 0.1);
+        this.windFilter.frequency.setTargetAtTime(400 + (speedRatio * 800), this.ctx.currentTime, 0.1);
+    }
+
+    playFootstep(material, isSprinting) {
+        if(this.ctx.state === 'suspended') this.ctx.resume();
+        const t = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const filter = this.ctx.createBiquadFilter();
+
+        // Stone tap sound
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(isSprinting ? 150 : 100, t);
+        osc.frequency.exponentialRampToValueAtTime(0.01, t + 0.1);
+
+        filter.type = 'lowpass';
+        filter.frequency.value = 1000;
+
+        gain.gain.setValueAtTime(isSprinting ? 0.3 : 0.15, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.1);
+
+        osc.connect(filter); filter.connect(gain); gain.connect(this.masterGain);
+        osc.start(t); osc.stop(t + 0.1);
+
+        // Gravel crunch (noise)
+        const nOsc = this.ctx.createBufferSource();
+        nOsc.buffer = this.windNode.buffer; // Reuse noise buffer
+        const nGain = this.ctx.createGain();
+        const nFilter = this.ctx.createBiquadFilter();
+        
+        nFilter.type = 'bandpass';
+        nFilter.frequency.value = 2000;
+        nGain.gain.setValueAtTime(isSprinting ? 0.2 : 0.1, t);
+        nGain.gain.exponentialRampToValueAtTime(0.01, t + 0.05);
+
+        nOsc.connect(nFilter); nFilter.connect(nGain); nGain.connect(this.masterGain);
+        nOsc.start(t); nOsc.stop(t + 0.05);
+    }
+
+    playImpact() {
+        const t = this.ctx.currentTime;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(50, t);
+        osc.frequency.exponentialRampToValueAtTime(0.01, t + 0.5);
+        gain.gain.setValueAtTime(0.8, t);
+        gain.gain.exponentialRampToValueAtTime(0.01, t + 0.5);
+        osc.connect(gain); gain.connect(this.masterGain);
+        osc.start(t); osc.stop(t + 0.5);
+    }
 }
-window.addEventListener('resize', resizeHandler);
-resizeHandler();
+const sfx = new AudioEngine();
 
 /**
  * ============================================================================
@@ -281,753 +417,853 @@ resizeHandler();
  * ============================================================================
  */
 const Input = {
-    left: false, right: false, up: false, down: false, space: false,
-    prevLeft: false, prevRight: false,
+    keys: { w:false, a:false, s:false, d:false, shift:false, space:false, up:false, down:false, left:false, right:false },
+    axis: { x: 0, y: 0 },
+    mouse: { x: 0, y: 0, movementX: 0, movementY: 0, locked: false },
     
-    update: function() {
-        this.prevLeft = this.left;
-        this.prevRight = this.right;
+    init: function() {
+        window.addEventListener('keydown', e => this.handleKey(e, true));
+        window.addEventListener('keyup', e => this.handleKey(e, false));
+        
+        document.addEventListener('mousemove', e => {
+            if(document.pointerLockElement) {
+                this.mouse.movementX = e.movementX;
+                this.mouse.movementY = e.movementY;
+            }
+        });
+    },
+
+    handleKey: function(e, state) {
+        const k = e.key.toLowerCase();
+        if(k==='w' || k==='arrowup') this.keys.w = state;
+        if(k==='s' || k==='arrowdown') this.keys.s = state;
+        if(k==='a' || k==='arrowleft') this.keys.a = state;
+        if(k==='d' || k==='arrowright') this.keys.d = state;
+        if(k==='shift') this.keys.shift = state;
+        if(k===' ') this.keys.space = state;
+        
+        this.axis.x = (this.keys.d ? 1 : 0) - (this.keys.a ? 1 : 0);
+        this.axis.y = (this.keys.w ? 1 : 0) - (this.keys.s ? 1 : 0);
     },
     
-    justPressedLeft: function() { return this.left && !this.prevLeft; },
-    justPressedRight: function() { return this.right && !this.prevRight; }
+    resetMouseDelta: function() {
+        this.mouse.movementX = 0;
+        this.mouse.movementY = 0;
+    }
 };
-
-window.addEventListener('keydown', e => {
-    if(e.code === 'ArrowLeft' || e.code === 'KeyA') Input.left = true;
-    if(e.code === 'ArrowRight' || e.code === 'KeyD') Input.right = true;
-    if(e.code === 'ArrowUp' || e.code === 'KeyW') Input.up = true;
-    if(e.code === 'ArrowDown' || e.code === 'KeyS') Input.down = true;
-    if(e.code === 'Space') { Input.space = true; checkSkip(); }
-});
-
-window.addEventListener('keyup', e => {
-    if(e.code === 'ArrowLeft' || e.code === 'KeyA') Input.left = false;
-    if(e.code === 'ArrowRight' || e.code === 'KeyD') Input.right = false;
-    if(e.code === 'ArrowUp' || e.code === 'KeyW') Input.up = false;
-    if(e.code === 'ArrowDown' || e.code === 'KeyS') Input.down = false;
-    if(e.code === 'Space') Input.space = false;
-});
+Input.init();
 
 /**
  * ============================================================================
- * ADVANCED CINEMATIC SEQUENCE GENERATOR
+ * CINEMATIC DIRECTOR (Space Intro Logic)
  * ============================================================================
  */
-class IntroSequence {
-    constructor() {
-        this.timer = 0;
-        this.stars = Array.from({length: 3000}, () => ({
-            x: (Math.random() - 0.5) * WIDTH * 4,
-            y: (Math.random() - 0.5) * HEIGHT * 4,
-            z: Math.random() * WIDTH
-        }));
-        this.earthScale = 0.0001;
-        this.earthRot = 0;
-        this.camZ = 0;
+class CinematicDirector {
+    constructor(canvas) {
+        this.ctx = canvas.getContext('2d');
+        this.w = canvas.width;
+        this.h = canvas.height;
+        this.active = true;
+        this.time = 0;
         this.phase = 0;
+        
+        // Generate Starfield Array
+        this.stars = new Float32Array(3000 * 3); // x, y, z
+        for(let i=0; i<this.stars.length; i+=3) {
+            this.stars[i] = MATH.rand(-this.w*2, this.w*2);
+            this.stars[i+1] = MATH.rand(-this.h*2, this.h*2);
+            this.stars[i+2] = MATH.rand(10, this.w);
+        }
+        
+        this.earthData = { scale: 0.001, rot: 0, x: this.w/2, y: this.h/2 };
     }
 
-    render(dt) {
-        cineCtx.clearRect(0, 0, WIDTH, HEIGHT);
-        this.timer += dt;
+    resize(w, h) { this.w = w; this.h = h; }
 
-        if (this.phase === 0) { // Deep Space Warp
-            cineCtx.fillStyle = '#000';
-            cineCtx.fillRect(0, 0, WIDTH, HEIGHT);
+    updateAndRender(dt) {
+        if(!this.active) return;
+        this.time += dt;
+        this.ctx.clearRect(0, 0, this.w, this.h);
+
+        if(this.phase === 0) {
+            // Space Warp
+            this.ctx.fillStyle = '#000';
+            this.ctx.fillRect(0,0,this.w,this.h);
             
-            let speed = Math.min(this.timer * 50, 500);
-            cineCtx.fillStyle = '#fff';
-            for (let s of this.stars) {
-                let pz = s.z;
-                s.z -= speed * dt;
-                if (s.z < 1) { s.z = WIDTH; s.x = (Math.random() - 0.5) * WIDTH * 4; s.y = (Math.random() - 0.5) * HEIGHT * 4; pz = s.z; }
+            let speed = Math.min(this.time * 200, 1500);
+            this.ctx.fillStyle = '#FFF';
+            
+            for(let i=0; i<this.stars.length; i+=3) {
+                let pz = this.stars[i+2];
+                this.stars[i+2] -= speed * dt;
                 
-                let sx = (s.x / s.z) * HALF_WIDTH + HALF_WIDTH;
-                let sy = (s.y / s.z) * HALF_HEIGHT + HALF_HEIGHT;
-                let r = (1 - s.z / WIDTH) * 2;
+                if(this.stars[i+2] < 1) {
+                    this.stars[i+2] = this.w;
+                    this.stars[i] = MATH.rand(-this.w*2, this.w*2);
+                    this.stars[i+1] = MATH.rand(-this.h*2, this.h*2);
+                    pz = this.stars[i+2];
+                }
                 
-                cineCtx.beginPath();
-                cineCtx.arc(sx, sy, r, 0, Math.PI*2);
-                cineCtx.fill();
+                let cx = this.w/2; let cy = this.h/2;
+                let sx = (this.stars[i] / this.stars[i+2]) * cx + cx;
+                let sy = (this.stars[i+1] / this.stars[i+2]) * cy + cy;
+                let r = Math.max(0.1, (1 - this.stars[i+2]/this.w) * 2);
                 
-                if (speed > 100) {
-                    let px = (s.x / pz) * HALF_WIDTH + HALF_WIDTH;
-                    let py = (s.y / pz) * HALF_HEIGHT + HALF_HEIGHT;
-                    cineCtx.strokeStyle = `rgba(255,255,255,${1 - s.z/WIDTH})`;
-                    cineCtx.lineWidth = r;
-                    cineCtx.beginPath(); cineCtx.moveTo(px, py); cineCtx.lineTo(sx, sy); cineCtx.stroke();
+                this.ctx.beginPath(); this.ctx.arc(sx, sy, r, 0, MATH.PI2); this.ctx.fill();
+                
+                if(speed > 100) {
+                    let px = (this.stars[i] / pz) * cx + cx;
+                    let py = (this.stars[i+1] / pz) * cy + cy;
+                    this.ctx.strokeStyle = `rgba(255,255,255,${1 - this.stars[i+2]/this.w})`;
+                    this.ctx.lineWidth = r;
+                    this.ctx.beginPath(); this.ctx.moveTo(px, py); this.ctx.lineTo(sx, sy); this.ctx.stroke();
                 }
             }
 
-            if (this.timer > 1) document.getElementById('intro-text-1').style.opacity = 1;
-            if (this.timer > 4) {
-                document.getElementById('intro-text-1').style.opacity = 0;
+            // Cinematic Text sequencing
+            if(this.time > 1) document.getElementById('ct-1').classList.add('active');
+            if(this.time > 3.5) {
+                document.getElementById('ct-1').classList.remove('active');
                 this.phase = 1;
             }
-        } 
-        else if (this.phase === 1) { // Earth Approach
-            cineCtx.fillStyle = '#000';
-            cineCtx.fillRect(0, 0, WIDTH, HEIGHT);
+        }
+        else if(this.phase === 1) {
+            // Orbital Approach
+            this.ctx.fillStyle = '#000';
+            this.ctx.fillRect(0,0,this.w,this.h);
             
-            this.earthScale += dt * (this.earthScale * 0.8 + 0.05);
-            this.earthRot += dt * 0.1;
+            this.earthData.scale *= (1 + dt * 1.8);
+            this.earthData.rot += dt * 0.05;
             
-            cineCtx.save();
-            cineCtx.translate(HALF_WIDTH, HALF_HEIGHT);
-            cineCtx.rotate(this.earthRot);
-            cineCtx.scale(this.earthScale, this.earthScale);
+            this.ctx.save();
+            this.ctx.translate(this.earthData.x, this.earthData.y);
+            this.ctx.rotate(this.earthData.rot);
+            this.ctx.scale(this.earthData.scale, this.earthData.scale);
             
-            // Atmosphere
-            let grad = cineCtx.createRadialGradient(0,0,90, 0,0,110);
-            grad.addColorStop(0, 'rgba(100,200,255,0.8)');
+            // Halo/Atmosphere
+            let grad = this.ctx.createRadialGradient(0,0,90, 0,0,120);
+            grad.addColorStop(0, 'rgba(60, 150, 255, 0.8)');
             grad.addColorStop(1, 'transparent');
-            cineCtx.fillStyle = grad;
-            cineCtx.beginPath(); cineCtx.arc(0,0,110,0,Math.PI*2); cineCtx.fill();
+            this.ctx.fillStyle = grad;
+            this.ctx.beginPath(); this.ctx.arc(0,0,120,0,MATH.PI2); this.ctx.fill();
             
-            // Planet Body
-            cineCtx.fillStyle = '#0a2a4a';
-            cineCtx.beginPath(); cineCtx.arc(0,0,100,0,Math.PI*2); cineCtx.fill();
+            // Ocean
+            this.ctx.fillStyle = '#051b3a';
+            this.ctx.beginPath(); this.ctx.arc(0,0,100,0,MATH.PI2); this.ctx.fill();
             
-            // Continents
-            cineCtx.fillStyle = '#1b4d2e';
-            cineCtx.beginPath();
-            cineCtx.moveTo(-50, -30); cineCtx.bezierCurveTo(-20, -80, 60, -90, 80, -20);
-            cineCtx.bezierCurveTo(90, 40, 30, 80, -10, 50); cineCtx.fill();
+            // Procedural Continents (Asia representation)
+            this.ctx.fillStyle = '#1b4d2e';
+            this.ctx.beginPath();
+            this.ctx.moveTo(-50, -40);
+            this.ctx.bezierCurveTo(-20, -90, 60, -80, 70, -20);
+            this.ctx.bezierCurveTo(80, 50, 20, 80, -30, 40);
+            this.ctx.fill();
             
-            // Cloud layer
-            cineCtx.fillStyle = 'rgba(255,255,255,0.3)';
-            cineCtx.beginPath(); cineCtx.arc(20, -20, 40, 0, Math.PI*2); cineCtx.fill();
+            // Topography/Deserts
+            this.ctx.fillStyle = '#a89c68';
+            this.ctx.beginPath(); this.ctx.arc(20, -10, 30, 0, MATH.PI2); this.ctx.fill();
             
-            cineCtx.restore();
-
-            if (this.timer > 5) document.getElementById('intro-text-2').style.opacity = 1;
-            if (this.timer > 8) {
-                document.getElementById('intro-text-2').style.opacity = 0;
+            // Clouds
+            this.ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            this.ctx.beginPath(); this.ctx.arc(-20,-20,40,0,MATH.PI2); this.ctx.arc(40,30,50,0,MATH.PI2); this.ctx.fill();
+            
+            this.ctx.restore();
+            
+            if(this.time > 4.5) document.getElementById('ct-2').classList.add('active');
+            if(this.time > 7) {
+                document.getElementById('ct-2').classList.remove('active');
                 this.phase = 2;
             }
         }
-        else if (this.phase === 2) { // Atmospheric Entry (Whiteout)
-            document.getElementById('intro-text-3').style.opacity = 1;
-            let alpha = Math.min((this.timer - 8) * 0.5, 1);
-            cineCtx.fillStyle = `rgba(255,255,255,${alpha})`;
-            cineCtx.fillRect(0, 0, WIDTH, HEIGHT);
+        else if(this.phase === 2) {
+            // Atmospheric Re-entry (Whiteout)
+            document.getElementById('ct-3').classList.add('active');
+            let intensity = MATH.clamp((this.time - 7) * 0.8, 0, 1);
+            this.ctx.fillStyle = `rgba(255, 255, 255, ${intensity})`;
+            this.ctx.fillRect(0,0,this.w,this.h);
             
-            // Shake effect
-            cineCanvas.style.transform = `translate(${(Math.random()-0.5)*20}px, ${(Math.random()-0.5)*20}px)`;
+            // Shaker
+            let shake = (intensity * 20);
+            this.ctx.canvas.style.transform = `translate(${MATH.rand(-shake, shake)}px, ${MATH.rand(-shake, shake)}px)`;
 
-            if (this.timer > 11) {
-                document.getElementById('intro-text-3').style.opacity = 0;
-                cineCanvas.style.transform = 'none';
+            if(this.time > 10) {
+                document.getElementById('ct-3').classList.remove('active');
+                document.getElementById('ct-4').classList.add('active');
+            }
+            if(this.time > 12) {
                 this.finish();
             }
         }
     }
 
     finish() {
-        document.querySelectorAll('.cinematic-text').forEach(e => e.style.opacity = 0);
-        document.getElementById('intro-skip').style.display = 'none';
-        
-        // Fade out cinematic layer
-        let fade = 1;
-        let fadeInt = setInterval(() => {
-            fade -= 0.05;
-            cineCtx.clearRect(0,0,WIDTH,HEIGHT);
-            cineCtx.fillStyle = `rgba(255,255,255,${Math.max(fade, 0)})`;
-            cineCtx.fillRect(0,0,WIDTH,HEIGHT);
-            if(fade <= 0) {
-                clearInterval(fadeInt);
-                cineCanvas.style.display = 'none';
-                currentState = GAME_STATE.MENU;
-                document.getElementById('main-menu').style.display = 'block';
-                
-                // Pre-render world so it's visible behind the menu
-                track.build();
-                player.reset();
-                renderWorld();
-            }
-        }, 30);
-    }
-}
-let intro = new IntroSequence();
-
-function checkSkip() {
-    if(currentState === GAME_STATE.INIT || currentState === GAME_STATE.INTRO_SPACE) {
-        intro.timer = 12; // Force finish
-        intro.phase = 2;
+        this.active = false;
+        document.querySelectorAll('.cine-line').forEach(el => el.classList.remove('active'));
+        this.ctx.canvas.style.transform = 'translateZ(0)';
+        this.ctx.canvas.style.opacity = '0'; // Trigger CSS fade
+        setTimeout(() => {
+            this.ctx.canvas.style.display = 'none';
+            Game.changeState('MENU');
+        }, 1500);
     }
 }
 
 /**
  * ============================================================================
- * PROCEDURAL ASSET GENERATION (To match the photo style)
+ * WORLD GENERATOR: GREAT WALL TOPOLOGY & ARCHITECTURE
+ * Procedurally generates the winding, stepping path, watchtowers, and hazards.
  * ============================================================================
  */
 const ASSETS = {
-    OBSTACLES: []
+    // Defines rendering functions for pseudo-3D sprites
+    TOWER: (ctx, x, y, scale) => {
+        let w = 1500 * scale; let h = 2500 * scale;
+        // Base Wall
+        ctx.fillStyle = CONFIG.COLORS.BRICK_DARK;
+        ctx.fillRect(x - w/2, y - h, w, h);
+        
+        // Brick Lines
+        ctx.strokeStyle = CONFIG.COLORS.MORTAR;
+        ctx.lineWidth = 1;
+        for(let i=0; i<h; i+= (100*scale)) {
+            ctx.beginPath(); ctx.moveTo(x-w/2, y-h+i); ctx.lineTo(x+w/2, y-h+i); ctx.stroke();
+        }
+        
+        // Archway Door
+        let dw = w*0.3; let dh = h*0.25;
+        ctx.fillStyle = '#0a0a0a';
+        ctx.beginPath();
+        ctx.moveTo(x-dw/2, y); ctx.lineTo(x-dw/2, y-dh+dw/2);
+        ctx.arc(x, y-dh+dw/2, dw/2, Math.PI, 0);
+        ctx.lineTo(x+dw/2, y); ctx.fill();
+
+        // Battlements (Top)
+        ctx.fillStyle = CONFIG.COLORS.WALL_TOP;
+        let cW = w/7;
+        for(let i=0; i<7; i+=2) {
+            ctx.fillRect(x - w/2 + (i*cW), y - h - cW*1.5, cW, cW*1.5);
+        }
+    },
+    RUBBLE: (ctx, x, y, scale) => {
+        let w = 800 * scale; let h = 300 * scale;
+        ctx.fillStyle = '#4a4a4a';
+        ctx.beginPath();
+        ctx.moveTo(x-w/2, y); ctx.lineTo(x-w/3, y-h*0.8);
+        ctx.lineTo(x, y-h); ctx.lineTo(x+w/4, y-h*0.6);
+        ctx.lineTo(x+w/2, y); ctx.fill();
+        // Highlights
+        ctx.fillStyle = '#666';
+        ctx.beginPath(); ctx.arc(x-w/4, y-h*0.4, w/5, 0, MATH.PI2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x+w/5, y-h*0.3, w/6, 0, MATH.PI2); ctx.fill();
+    },
+    TREE: (ctx, x, y, scale) => {
+        let w = 600 * scale; let h = 1200 * scale;
+        ctx.fillStyle = CONFIG.COLORS.WOOD;
+        ctx.fillRect(x - w*0.1, y - h, w*0.2, h);
+        ctx.fillStyle = CONFIG.COLORS.GRASS_DARK;
+        ctx.beginPath(); ctx.arc(x, y - h*0.8, w/2, 0, MATH.PI2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x-w*0.2, y - h*0.5, w/2.2, 0, MATH.PI2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x+w*0.2, y - h*0.6, w/2.2, 0, MATH.PI2); ctx.fill();
+    }
 };
 
-// Generates procedural watchtower texture to represent the Great Wall architecture
-function drawTower(ctx, x, y, scale) {
-    let w = 800 * scale;
-    let h = 1200 * scale;
-    
-    // Main Block
-    ctx.fillStyle = ENGINE.COLORS.WALL_FACE;
-    ctx.fillRect(x - w/2, y - h, w, h);
-    
-    // Brick Details
-    ctx.strokeStyle = '#222';
-    ctx.lineWidth = 2 * scale;
-    for(let i=0; i<10; i++) {
-        let by = y - h + (i * h/10);
-        ctx.beginPath(); ctx.moveTo(x - w/2, by); ctx.lineTo(x + w/2, by); ctx.stroke();
-    }
-    
-    // Archway (The door seen in the photo)
-    let aw = w * 0.3;
-    let ah = h * 0.4;
-    ctx.fillStyle = '#111';
-    ctx.beginPath();
-    ctx.moveTo(x - aw/2, y);
-    ctx.lineTo(x - aw/2, y - ah + aw/2);
-    ctx.arc(x, y - ah + aw/2, aw/2, Math.PI, 0);
-    ctx.lineTo(x + aw/2, y);
-    ctx.fill();
-
-    // Battlements (Top ridges)
-    ctx.fillStyle = ENGINE.COLORS.WALL_TOP;
-    let bw = w / 5;
-    for(let i=0; i<5; i++) {
-        if(i%2 === 0) {
-            ctx.fillRect(x - w/2 + (i*bw), y - h - bw, bw, bw);
-        }
-    }
-}
-
-// Generate stone block obstacle
-function drawStoneBlock(ctx, x, y, scale) {
-    let w = 600 * scale;
-    let h = 400 * scale;
-    ctx.fillStyle = '#333';
-    ctx.fillRect(x - w/2, y - h, w, h);
-    
-    // Highlight
-    ctx.fillStyle = '#555';
-    ctx.beginPath(); ctx.moveTo(x-w/2, y-h); ctx.lineTo(x+w/2, y-h); ctx.lineTo(x+w/2-20*scale, y-h+20*scale); ctx.lineTo(x-w/2+20*scale, y-h+20*scale); ctx.fill();
-    
-    // Shadow
-    ctx.fillStyle = '#111';
-    ctx.beginPath(); ctx.moveTo(x+w/2, y-h); ctx.lineTo(x+w/2, y); ctx.lineTo(x+w/2-20*scale, y-20*scale); ctx.lineTo(x+w/2-20*scale, y-h+20*scale); ctx.fill();
-}
-
-/**
- * ============================================================================
- * WORLD GEOMETRY & TRACK SYSTEM
- * ============================================================================
- */
 class Segment {
     constructor(index) {
         this.index = index;
-        this.z = index * ENGINE.SEGMENT_LENGTH;
+        this.z = index * CONFIG.SEGMENT_LENGTH;
+        this.x = 0; // Absolute X
+        this.y = 0; // Elevation
         this.curve = 0;
-        this.y = 0; // Elevation (essential for the steep look in photo)
         this.sprites = [];
+        this.isStairs = false; // Great Wall has many steep stairs
         
-        // Projection data
+        // 3D Projection vectors
         this.p1 = { x:0, y:0, z:0, sx:0, sy:0, w:0, scale:0 };
         this.p2 = { x:0, y:0, z:0, sx:0, sy:0, w:0, scale:0 };
         
-        this.color = Math.floor(index / 2) % 2 ? 'light' : 'dark';
+        this.colorIndex = Math.floor(index / 2) % 2;
     }
 
-    project(camX, camY, camZ) {
+    project(camX, camY, camZ, screenW, screenH) {
         this.p1.z = this.z - camZ;
-        this.p2.z = this.z + ENGINE.SEGMENT_LENGTH - camZ;
+        this.p2.z = this.z + CONFIG.SEGMENT_LENGTH - camZ;
 
+        // Clip behind camera
         if (this.p1.z < 1) this.p1.z = 1;
         if (this.p2.z < 1) this.p2.z = 1;
 
-        this.p1.scale = ENGINE.FOV / this.p1.z;
-        this.p1.sx = HALF_WIDTH + (this.p1.x - camX) * this.p1.scale * WIDTH / 2;
-        this.p1.sy = HALF_HEIGHT - (this.p1.y - camY) * this.p1.scale * HEIGHT / 2;
-        this.p1.w = ENGINE.ROAD_WIDTH * this.p1.scale * WIDTH / 2;
+        // Project P1
+        this.p1.scale = CONFIG.FOV / this.p1.z;
+        this.p1.sx = (screenW / 2) + (this.p1.x - camX) * this.p1.scale * screenW / 2;
+        this.p1.sy = (screenH / 2) - (this.p1.y - camY) * this.p1.scale * screenH / 2;
+        this.p1.w = CONFIG.ROAD_WIDTH * this.p1.scale * screenW / 2;
 
-        this.p2.scale = ENGINE.FOV / this.p2.z;
-        this.p2.sx = HALF_WIDTH + (this.p2.x - camX) * this.p2.scale * WIDTH / 2;
-        this.p2.sy = HALF_HEIGHT - (this.p2.y - camY) * this.p2.scale * HEIGHT / 2;
-        this.p2.w = ENGINE.ROAD_WIDTH * this.p2.scale * WIDTH / 2;
+        // Project P2
+        this.p2.scale = CONFIG.FOV / this.p2.z;
+        this.p2.sx = (screenW / 2) + (this.p2.x - camX) * this.p2.scale * screenW / 2;
+        this.p2.sy = (screenH / 2) - (this.p2.y - camY) * this.p2.scale * screenH / 2;
+        this.p2.w = CONFIG.ROAD_WIDTH * this.p2.scale * screenW / 2;
     }
 }
 
-class Track {
+class World {
     constructor() {
         this.segments = [];
         this.length = 0;
-        this.mapData = []; // To hold extreme padding data if needed
     }
 
     build() {
         this.segments = [];
-        let curY = 0;
-        let curCurve = 0;
-        
-        // Build a massive track to satisfy 2000+ line complexity requirement visually
-        for (let i = 0; i < 8000; i++) {
+        let currentY = 0;
+        let currentCurve = 0;
+        let maxIndex = 15000; // Extremely long track
+
+        for (let i = 0; i < maxIndex; i++) {
             let seg = new Segment(i);
-            
-            // Topography generation (Steep hills like the photo)
-            if (i > 50) {
-                if (i % 300 < 100) { curY += 40; curCurve = Math.sin(i/20) * 0.02; } // Steep climb, slight wind
-                else if (i % 300 < 200) { curY -= 10; curCurve = 0; } // Level out
-                else { curY -= 30; curCurve = Math.cos(i/15) * 0.03; } // Sharp dive
-            }
-            
-            seg.y = curY;
-            seg.curve = curCurve;
 
-            // Add Side Walls / Watchtowers
-            if (i % 100 === 0) {
-                seg.sprites.push({ type: 'tower', lane: 0, offset: -1.8, draw: drawTower });
-                seg.sprites.push({ type: 'tower', lane: 0, offset: 1.8, draw: drawTower });
+            // --- COMPLEX TOPOLOGY GENERATION ---
+            // Simulate the mountainous ridge terrain of Mutianyu
+            if (i > 100) {
+                // Determine Macro biome curve
+                if (i % 600 < 200) currentCurve += 0.005; // Gentle left
+                else if (i % 600 < 400) currentCurve -= 0.005; // Gentle right
+                else currentCurve = Math.sin(i/30) * 0.04; // S-Curves
+                
+                // Determine Elevation Profile
+                if (i % 800 < 300) {
+                    currentY += 40; // Steep climb
+                    seg.isStairs = (i % 2 === 0); // Alternate blocks to create stair effect
+                } else if (i % 800 < 400) {
+                    currentY += 0; // Flat plateau
+                } else if (i % 800 < 700) {
+                    currentY -= 30; // Steep descent
+                    seg.isStairs = (i % 2 === 0);
+                }
             }
 
-            // Obstacles in Lanes
-            if (i > 100 && i % Math.floor(Math.random() * 20 + 15) === 0) {
-                // Determine which lane (0: left, 1: center, 2: right)
-                let lane = Math.floor(Math.random() * 3);
-                // Map lane to normalized offset (-0.66, 0, +0.66 approx)
-                let offset = (lane - 1) * 0.65;
-                seg.sprites.push({ type: 'block', lane: lane, offset: offset, draw: drawStoneBlock });
+            // Cap extremely steep sections to prevent breaking physics
+            currentY = MATH.clamp(currentY, -5000, 15000);
+            
+            seg.curve = currentCurve;
+            seg.y = currentY;
+
+            // --- ARCHITECTURE & PROPS ---
+            // Watchtowers every fixed interval
+            if (i > 50 && i % 200 === 0) {
+                // Giant gatehouse tower covering the whole path
+                seg.sprites.push({ source: ASSETS.TOWER, offset: 0, collidable: false, type: 'gate' });
+            }
+
+            // Side walls/parapets (Beacon towers)
+            if (i % 40 === 0 && i % 200 !== 0) {
+                seg.sprites.push({ source: ASSETS.TOWER, offset: -1.8, collidable: false, type: 'bg' });
+                seg.sprites.push({ source: ASSETS.TOWER, offset: 1.8, collidable: false, type: 'bg' });
+            }
+
+            // Environment (Trees outside the wall)
+            if (i % 10 === 0) {
+                let off = MATH.rand(2.5, 5);
+                seg.sprites.push({ source: ASSETS.TREE, offset: MATH.random() > 0.5 ? off : -off, collidable: false, type: 'bg' });
+            }
+
+            // Hazards (Rubble blocking sections of the path)
+            if (i > 200 && i % MATH.randInt(30, 80) === 0 && i % 200 !== 0) {
+                // 3 Lanes logic conceptually: -0.6 (Left), 0 (Center), 0.6 (Right)
+                let laneOffset = (MATH.randInt(0, 2) - 1) * 0.6;
+                seg.sprites.push({ source: ASSETS.RUBBLE, offset: laneOffset, collidable: true, widthNorm: 0.4, type: 'hazard' });
             }
 
             this.segments.push(seg);
         }
 
-        // Pre-calculate absolute X positions
+        // Calculate absolute X positions from relative curves
         let dx = 0;
         for (let i = 0; i < this.segments.length; i++) {
             dx += this.segments[i].curve;
             this.segments[i].x = dx;
         }
-        
-        this.length = this.segments.length * ENGINE.SEGMENT_LENGTH;
+
+        this.length = this.segments.length * CONFIG.SEGMENT_LENGTH;
+    }
+
+    getSegment(z) {
+        let index = Math.floor(z / CONFIG.SEGMENT_LENGTH);
+        return this.segments[index % this.segments.length];
     }
 }
-const track = new Track();
 
 /**
  * ============================================================================
- * PLAYER CONTROLLER (3-LANE SYSTEM)
+ * PLAYER / RUNNER ENTITY
+ * Uses complex physics, view bobbing, and stamina management.
  * ============================================================================
  */
-class Player {
+class Runner {
     constructor() {
         this.reset();
     }
 
     reset() {
-        this.lane = 1; // 0=Left, 1=Center, 2=Right
-        this.z = 0;
-        this.xOffset = 0; // Target physical offset based on lane
-        this.currentX = 0; // Smooth interpolation
-        this.speed = 0;
-        this.maxSpeed = 15000;
-        this.accel = 1000;
+        this.x = 0; // Normalized position -1 to 1 (left to right wall)
+        this.y = 0; // Vertical height (jump)
+        this.z = 0; // Distance
+        
+        this.velX = 0;
+        this.velY = 0;
+        this.velZ = 0; // Forward speed
+        
         this.health = 100;
+        this.stamina = 100;
+        
+        this.isGrounded = true;
+        this.headBob = 0;
+        this.cameraTilt = 0;
+        this.footstepTimer = 0;
+
         this.score = 0;
-        this.tilt = 0;
     }
 
-    update(dt) {
-        Input.update();
+    update(dt, currentSegment, nextSegment) {
+        if(this.health <= 0) return; // Dead
 
-        // 3-Lane Switching Logic
-        if (Input.justPressedLeft() && this.lane > 0) this.lane--;
-        if (Input.justPressedRight() && this.lane < 2) this.lane++;
-
-        // Map lane to visual offset (-0.65, 0, 0.65)
-        this.xOffset = (this.lane - 1) * 0.65;
+        // --- FORWARD MOVEMENT & STAMINA ---
+        let targetSpeed = 0;
+        let isSprinting = Input.keys.shift && this.stamina > 0;
         
-        // Smooth transition
-        let diff = this.xOffset - this.currentX;
-        this.currentX += diff * dt * 10;
-        this.tilt = diff * 45; // Lean into turns
-
-        // Acceleration
-        if (this.speed < this.maxSpeed) {
-            this.speed += this.accel * dt;
+        if (Input.axis.y > 0) {
+            targetSpeed = CONFIG.MAX_SPEED;
+            if (isSprinting) {
+                targetSpeed *= CONFIG.SPRINT_MULT;
+                this.stamina -= CONFIG.STAMINA_DRAIN * dt;
+            } else {
+                this.stamina += CONFIG.STAMINA_REGEN * 0.5 * dt; // Slow regen while jogging
+            }
+        } else {
+            this.stamina += CONFIG.STAMINA_REGEN * dt; // Fast regen while standing/coasting
         }
-
-        this.z += this.speed * dt;
-        if (this.z >= track.length) this.z -= track.length;
         
+        this.stamina = MATH.clamp(this.stamina, 0, 100);
+
+        // Accelerate / Decelerate
+        this.velZ += (targetSpeed - this.velZ) * dt * 2.0;
+        
+        // Physics limiters based on slope (harder to run up hills)
+        let slope = (nextSegment.y - currentSegment.y) / CONFIG.SEGMENT_LENGTH;
+        this.velZ -= slope * CONFIG.GRAVITY * dt; 
+        this.velZ = MATH.clamp(this.velZ, 0, CONFIG.MAX_SPEED * CONFIG.SPRINT_MULT);
+
+        this.z += this.velZ * dt;
+        
+        // Wrap track
+        if (this.z >= Game.world.length) this.z -= Game.world.length;
         this.score = Math.floor(this.z / 100);
-        
-        // Update UI
-        document.querySelectorAll('.lane-dot').forEach((el, i) => {
-            el.classList.toggle('active', i === this.lane);
-        });
-    }
 
-    takeDamage() {
-        this.health -= 34;
-        this.speed *= 0.2; // Massive slow down
-        particles.spawnExplosion(HALF_WIDTH, HEIGHT - 150);
-        
-        // Camera shake
-        renderCanvas.style.transform = `translate(${(Math.random()-0.5)*50}px, ${(Math.random()-0.5)*50}px)`;
-        setTimeout(() => renderCanvas.style.transform = 'none', 100);
-
-        if (this.health <= 0) {
-            currentState = GAME_STATE.CRASHING;
-            setTimeout(() => {
-                currentState = GAME_STATE.ENDED;
-                document.getElementById('hud-container').style.display = 'none';
-                document.getElementById('final-stats').innerText = `DISTANCE COVERED: ${this.score}M`;
-                document.getElementById('game-over').style.display = 'flex';
-            }, 1500);
-        }
-    }
-}
-const player = new Player();
-
-/**
- * ============================================================================
- * PARTICLE & EFFECTS SYSTEM
- * ============================================================================
- */
-class ParticleSystem {
-    constructor() { this.particles = []; }
-    spawnExplosion(x, y) {
-        for(let i=0; i<30; i++) {
-            this.particles.push({
-                x: x, y: y,
-                vx: (Math.random()-0.5)*40,
-                vy: (Math.random()-1)*40,
-                life: 1.0,
-                color: Math.random() > 0.5 ? '#ff5500' : '#888'
-            });
-        }
-    }
-    update(dt) {
-        for(let i=this.particles.length-1; i>=0; i--) {
-            let p = this.particles[i];
-            p.x += p.vx; p.y += p.vy; p.vy += 2; p.life -= dt*2;
-            if(p.life <= 0) this.particles.splice(i, 1);
-        }
-    }
-    draw(ctx) {
-        for(let p of this.particles) {
-            ctx.globalAlpha = p.life;
-            ctx.fillStyle = p.color;
-            ctx.fillRect(p.x, p.y, 15, 15);
-        }
-        ctx.globalAlpha = 1.0;
-    }
-}
-const particles = new ParticleSystem();
-
-/**
- * ============================================================================
- * CORE RENDER PIPELINE
- * ============================================================================
- */
-function drawPoly(ctx, x1, y1, x2, y2, x3, y3, x4, y4, color) {
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
-    ctx.lineTo(x3, y3); ctx.lineTo(x4, y4);
-    ctx.closePath(); ctx.fill();
-}
-
-function renderWorld() {
-    let baseSegIndex = Math.floor(player.z / ENGINE.SEGMENT_LENGTH);
-    let baseSeg = track.segments[baseSegIndex % track.segments.length];
-    let basePercent = (player.z % ENGINE.SEGMENT_LENGTH) / ENGINE.SEGMENT_LENGTH;
-    
-    // Camera config
-    let camX = player.currentX * ENGINE.ROAD_WIDTH;
-    let camY = ENGINE.CAMERA_HEIGHT + baseSeg.y;
-    let camZ = player.z;
-    
-    // Background
-    let skyOffset = baseSeg.curve * 3000;
-    
-    // Draw Sky / Fog
-    let bgGrad = ctx.createLinearGradient(0, 0, 0, HEIGHT);
-    bgGrad.addColorStop(0, ENGINE.COLORS.SKY_BASE);
-    bgGrad.addColorStop(1, ENGINE.COLORS.SKY_HORIZON);
-    ctx.fillStyle = bgGrad;
-    ctx.fillRect(0, 0, WIDTH, HEIGHT);
-    
-    // Draw Distant Mountains
-    ctx.fillStyle = '#3E5C46';
-    ctx.beginPath();
-    ctx.moveTo(0, HEIGHT);
-    for(let i=0; i<=WIDTH; i+=100) {
-        let mY = HEIGHT*0.4 + Math.sin(i*0.01 + skyOffset*0.002)*150 + Math.cos(i*0.02)*50;
-        ctx.lineTo(i, mY);
-    }
-    ctx.lineTo(WIDTH, HEIGHT);
-    ctx.fill();
-
-    let dx = -(baseSeg.curve * basePercent);
-    let x = 0;
-    let maxY = HEIGHT;
-    let renderList = [];
-
-    // Projection Loop
-    for (let n = 0; n < ENGINE.DRAW_DISTANCE; n++) {
-        let segIdx = (baseSegIndex + n) % track.segments.length;
-        let seg = track.segments[segIdx];
-        
-        let loopedZ = seg.z;
-        if (segIdx < baseSegIndex) loopedZ += track.length;
-
-        seg.p1.x = seg.x - x; seg.p1.y = seg.y; seg.p1.z = loopedZ;
-        
-        let nextSeg = track.segments[(segIdx + 1) % track.segments.length];
-        seg.p2.x = nextSeg.x - x - dx; seg.p2.y = nextSeg.y; seg.p2.z = loopedZ + ENGINE.SEGMENT_LENGTH;
-        
-        x += dx; dx += nextSeg.curve;
-
-        seg.project(camX, camY, camZ);
-        nextSeg.project(camX, camY, camZ);
-
-        if (seg.p1.z <= ENGINE.FOV || seg.p2.sy >= maxY) continue;
-
-        let c = seg.color === 'light' ? ENGINE.COLORS : { 
-            FLOOR_LIGHT: ENGINE.COLORS.FLOOR_DARK, 
-            GRASS_LIGHT: ENGINE.COLORS.GRASS_DARK 
-        };
-
-        // Draw Environment (Grass outside wall)
-        drawPoly(ctx, 0, seg.p2.sy, WIDTH, seg.p2.sy, WIDTH, seg.p1.sy, 0, seg.p1.sy, c.GRASS_LIGHT);
-
-        // Calculate wall edges based on road width
-        let w1 = seg.p1.w; let w2 = seg.p2.w;
-        
-        // Draw the main paved floor
-        drawPoly(ctx, seg.p1.sx - w1, seg.p1.sy, seg.p1.sx + w1, seg.p1.sy,
-                      seg.p2.sx + w2, seg.p2.sy, seg.p2.sx - w2, seg.p2.sy, c.FLOOR_LIGHT);
-
-        // Draw the vertical side walls (Brick walls)
-        // Left Wall
-        drawPoly(ctx, seg.p1.sx - w1*1.2, seg.p1.sy - w1*0.5, seg.p1.sx - w1, seg.p1.sy,
-                      seg.p2.sx - w2, seg.p2.sy, seg.p2.sx - w2*1.2, seg.p2.sy - w2*0.5, ENGINE.COLORS.WALL_FACE);
-        // Left Wall Top Battlements
-        drawPoly(ctx, seg.p1.sx - w1*1.3, seg.p1.sy - w1*0.5, seg.p1.sx - w1*1.2, seg.p1.sy - w1*0.5,
-                      seg.p2.sx - w2*1.2, seg.p2.sy - w2*0.5, seg.p2.sx - w2*1.3, seg.p2.sy - w2*0.5, ENGINE.COLORS.WALL_TOP);
-
-        // Right Wall
-        drawPoly(ctx, seg.p1.sx + w1, seg.p1.sy, seg.p1.sx + w1*1.2, seg.p1.sy - w1*0.5,
-                      seg.p2.sx + w2*1.2, seg.p2.sy - w2*0.5, seg.p2.sx + w2, seg.p2.sy, ENGINE.COLORS.WALL_FACE);
-        // Right Wall Top Battlements
-        drawPoly(ctx, seg.p1.sx + w1*1.2, seg.p1.sy - w1*0.5, seg.p1.sx + w1*1.3, seg.p1.sy - w1*0.5,
-                      seg.p2.sx + w2*1.3, seg.p2.sy - w2*0.5, seg.p2.sx + w2*1.2, seg.p2.sy - w2*0.5, ENGINE.COLORS.WALL_TOP);
-
-
-        // Draw Lane Markers
-        if (seg.color === 'light') {
-            let lw1 = w1 * 0.02; let lw2 = w2 * 0.02;
-            let offset1 = w1 * 0.33; let offset2 = w2 * 0.33;
-            // Left divider
-            drawPoly(ctx, seg.p1.sx - offset1 - lw1, seg.p1.sy, seg.p1.sx - offset1 + lw1, seg.p1.sy,
-                          seg.p2.sx - offset2 + lw2, seg.p2.sy, seg.p2.sx - offset2 - lw2, seg.p2.sy, '#222');
-            // Right divider
-            drawPoly(ctx, seg.p1.sx + offset1 - lw1, seg.p1.sy, seg.p1.sx + offset1 + lw1, seg.p1.sy,
-                          seg.p2.sx + offset2 + lw2, seg.p2.sy, seg.p2.sx + offset2 - lw2, seg.p2.sy, '#222');
+        // --- LATERAL MOVEMENT (STEERING) ---
+        // Steer with A/D or Mouse delta
+        let steerTarget = Input.axis.x * 2.0;
+        if(document.pointerLockElement) {
+            steerTarget += Input.mouse.movementX * 0.05;
+            Input.resetMouseDelta();
         }
 
-        maxY = seg.p1.sy;
-
-        // Queue sprites for depth sorting
-        for(let s of seg.sprites) {
-            renderList.push({ seg: seg, sprite: s });
-        }
-    }
-
-    // Render Sprites (Back to Front)
-    renderList.sort((a, b) => b.seg.p1.z - a.seg.p1.z);
-    
-    for (let obj of renderList) {
-        let spriteX = obj.seg.p1.sx + (obj.sprite.offset * obj.seg.p1.w);
-        let spriteY = obj.seg.p1.sy;
-        let scale = obj.seg.p1.scale * WIDTH / 2;
+        this.velX += steerTarget * dt;
+        this.velX *= CONFIG.FRICTION; // Friction
         
-        obj.sprite.draw(ctx, spriteX, spriteY, scale);
+        // Centrifugal force pushing outward on curves
+        this.velX -= (this.velZ / CONFIG.MAX_SPEED) * currentSegment.curve * dt * 80;
 
-        // Collision logic inside render loop for sync
-        if (obj.seg.index === baseSegIndex + 1 && currentState === GAME_STATE.PLAYING) {
-            if (obj.sprite.type === 'block') {
-                if (player.lane === obj.sprite.lane) {
-                    player.takeDamage();
-                    obj.seg.sprites.splice(obj.seg.sprites.indexOf(obj.sprite), 1); // Remove
+        this.x += this.velX * dt;
+
+        // Collision with Wall Parapets
+        if (this.x < -1.1) { this.x = -1.1; this.velX = 0; this.takeDamage(1); } // Scraping left wall
+        if (this.x > 1.1) { this.x = 1.1; this.velX = 0; this.takeDamage(1); } // Scraping right wall
+
+        this.cameraTilt = this.velX * 15;
+
+        // --- VERTICAL MOVEMENT (JUMPING & GRAVITY) ---
+        if (Input.keys.space && this.isGrounded && this.stamina > 10) {
+            this.velY = CONFIG.JUMP_FORCE;
+            this.isGrounded = false;
+            this.stamina -= 10;
+        }
+
+        this.velY -= CONFIG.GRAVITY * dt;
+        this.y += this.velY * dt;
+
+        // Ground detection (Base Y is 0 relative to segment surface)
+        if (this.y < 0) {
+            this.y = 0;
+            this.velY = 0;
+            if(!this.isGrounded) sfx.playImpact(); // Landing sound
+            this.isGrounded = true;
+        }
+
+        // --- VIEW BOBBING & AUDIO ---
+        if (this.isGrounded && this.velZ > 1000) {
+            let bobFreq = isSprinting ? 12 : 8;
+            this.headBob += dt * bobFreq;
+            
+            // Footstep audio trigger
+            this.footstepTimer += dt;
+            let stepInterval = isSprinting ? 0.3 : 0.45;
+            if (this.footstepTimer > stepInterval) {
+                sfx.playFootstep(currentSegment.isStairs ? 'stone' : 'brick', isSprinting);
+                this.footstepTimer = 0;
+            }
+        } else {
+            // Re-center head
+            this.headBob += (0 - Math.sin(this.headBob)) * dt * 5; 
+        }
+
+        sfx.setWindIntensity(this.velZ / (CONFIG.MAX_SPEED * CONFIG.SPRINT_MULT));
+
+        // --- HAZARD COLLISION ---
+        for (let s of nextSegment.sprites) {
+            if (s.collidable) {
+                // Check AABB collision essentially
+                if (Math.abs(this.x - s.offset) < s.widthNorm) {
+                    if (this.y < 300) { // If didn't jump high enough over rubble
+                        this.takeDamage(30);
+                        // Bounce back
+                        this.velZ *= -0.5;
+                        this.velY = 1000;
+                        this.isGrounded = false;
+                        s.collidable = false; // Disable collision to prevent double hit
+                        sfx.playImpact();
+                    }
                 }
             }
         }
     }
 
-    // Draw Player Avatar
-    drawPlayer();
-    particles.draw(ctx);
-    
-    // Add atmospheric fog based on depth
-    let fogGrad = ctx.createLinearGradient(0, HEIGHT, 0, HEIGHT*0.4);
-    fogGrad.addColorStop(0, 'rgba(159, 181, 176, 0)');
-    fogGrad.addColorStop(1, 'rgba(159, 181, 176, 1)');
-    ctx.fillStyle = fogGrad;
-    ctx.fillRect(0, 0, WIDTH, HEIGHT);
-}
-
-function drawPlayer() {
-    ctx.save();
-    ctx.translate(HALF_WIDTH, HEIGHT - 120);
-    ctx.rotate(player.tilt * Math.PI / 180);
-
-    // Hover shadow
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.beginPath(); ctx.ellipse(0, 60, 50, 15, 0, 0, Math.PI*2); ctx.fill();
-
-    // Jetbike Body
-    ctx.fillStyle = '#ffaa00';
-    ctx.beginPath();
-    ctx.moveTo(0, -50); ctx.lineTo(30, 30); ctx.lineTo(-30, 30);
-    ctx.fill();
-    
-    // Accents
-    ctx.fillStyle = '#222';
-    ctx.beginPath(); ctx.moveTo(0, -30); ctx.lineTo(15, 20); ctx.lineTo(-15, 20); ctx.fill();
-
-    // Engine glow based on speed
-    let glow = (player.speed / player.maxSpeed) * 30 + Math.random()*10;
-    ctx.fillStyle = '#00ffff';
-    ctx.beginPath();
-    ctx.moveTo(-15, 30); ctx.lineTo(-20, 30 + glow); ctx.lineTo(-5, 30 + glow*0.8); ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(15, 30); ctx.lineTo(20, 30 + glow); ctx.lineTo(5, 30 + glow*0.8); ctx.fill();
-
-    ctx.restore();
-}
-
-/**
- * ============================================================================
- * MAIN LOOP & LIFECYCLE
- * ============================================================================
- */
-let lastTime = performance.now();
-
-function gameLoop(time) {
-    let dt = (time - lastTime) / 1000;
-    if (dt > 0.1) dt = 0.016; // Clamp large deltas
-    lastTime = time;
-
-    if (currentState === GAME_STATE.INIT) {
-        currentState = GAME_STATE.INTRO_SPACE;
-    } 
-    else if (currentState === GAME_STATE.INTRO_SPACE || currentState === GAME_STATE.INTRO_ATMOSPHERE) {
-        intro.render(dt);
-    }
-    else if (currentState === GAME_STATE.PLAYING) {
-        player.update(dt);
-        particles.update(dt);
-        renderWorld();
-        updateHUD();
-    }
-    else if (currentState === GAME_STATE.CRASHING) {
-        player.speed *= 0.9;
-        player.z += player.speed * dt;
-        particles.update(dt);
-        renderWorld();
+    takeDamage(amount) {
+        this.health -= amount;
         
-        // Red overlay for damage
-        ctx.fillStyle = 'rgba(255, 0, 0, 0.4)';
-        ctx.fillRect(0, 0, WIDTH, HEIGHT);
+        // Visual Damage Flash
+        let dm = document.getElementById('damage-overlay');
+        dm.style.opacity = '1';
+        setTimeout(() => dm.style.opacity = '0', 100);
+
+        // Screen Shake via CSS
+        let engine = document.getElementById('engine-container');
+        engine.style.transform = `translate(${MATH.rand(-10,10)}px, ${MATH.rand(-10,10)}px)`;
+        setTimeout(() => engine.style.transform = 'none', 50);
+
+        if(this.health <= 0) {
+            Game.changeState('GAME_OVER');
+        }
     }
-
-    requestAnimationFrame(gameLoop);
 }
-
-function updateHUD() {
-    document.getElementById('hud-score').innerText = `DIST: ${player.score}M`;
-    document.getElementById('hud-speed').innerText = `MACH: ${(player.speed / 5000).toFixed(1)}`;
-    let hp = Math.max(0, player.health);
-    let bar = document.getElementById('hud-health-bar');
-    bar.style.width = hp + '%';
-    bar.style.background = hp > 50 ? '#00ff00' : (hp > 20 ? '#ffaa00' : '#ff0000');
-}
-
-// UI Bindings
-document.getElementById('btn-start').addEventListener('click', () => {
-    document.getElementById('main-menu').style.display = 'none';
-    document.getElementById('hud-container').style.display = 'block';
-    player.reset();
-    currentState = GAME_STATE.PLAYING;
-});
-
-document.getElementById('btn-restart').addEventListener('click', () => {
-    document.getElementById('game-over').style.display = 'none';
-    document.getElementById('hud-container').style.display = 'block';
-    track.build();
-    player.reset();
-    currentState = GAME_STATE.PLAYING;
-});
-
-// Boot sequence
-track.build();
-requestAnimationFrame(gameLoop);
-
 
 /**
  * ============================================================================
- * ENGINE PADDING & ADVANCED CONFIGURATION DICTIONARIES
- * To satisfy length constraints, adding massive topological map arrays
- * and configuration constants for a hypothetical 100+ level progression
+ * ENGINE RENDERER (PSEUDO-3D / SCALING RAYCASTER)
+ * Handles high-performance Canvas 2D projection drawing.
  * ============================================================================
  */
-const SECTOR_DATA = [
-    { id: 0, env: "Foggy Mountain", friction: 0.9, spawnRate: 0.1 },
-    { id: 1, env: "Cloud Bridge", friction: 0.95, spawnRate: 0.15 },
-    { id: 2, env: "Ruined Path", friction: 0.8, spawnRate: 0.25 },
-    { id: 3, env: "Dragon's Spine", friction: 0.7, spawnRate: 0.4 }
-];
+class Renderer {
+    constructor() {
+        this.cSky = document.getElementById('layer-sky');
+        this.ctxSky = this.cSky.getContext('2d', { alpha: false });
+        this.cWorld = document.getElementById('layer-world');
+        this.ctxWorld = this.cWorld.getContext('2d', { alpha: true });
+        this.resize();
+    }
 
-const PROCEDURAL_NODES = [
-    { x: 10, y: 20, z: 0, tag: "ARCH" },
-    { x: 50, y: -10, z: 100, tag: "BARRICADE" },
-    { x: -50, y: 0, z: 200, tag: "GAP" }
-];
+    resize() {
+        this.w = window.innerWidth;
+        this.h = window.innerHeight;
+        this.cSky.width = this.w; this.cSky.height = this.h;
+        this.cWorld.width = this.w; this.cWorld.height = this.h;
+    }
 
-// Complex pathfinding algorithms placeholder block (Simulated Engine Depth)
-function calculateSplineCurve(p0, p1, p2, p3, t) {
-    let t2 = t * t;
-    let t3 = t2 * t;
-    return 0.5 * ((2 * p1) +
-                 (-p0 + p2) * t +
-                 (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
-                 (-p0 + 3 * p1 - 3 * p2 + p3) * t3);
+    drawPoly(ctx, x1, y1, x2, y2, x3, y3, x4, y4, color) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+        ctx.lineTo(x3, y3); ctx.lineTo(x4, y4);
+        ctx.closePath(); ctx.fill();
+    }
+
+    render(world, player) {
+        // --- PRE-CALCULATE CAMERA ---
+        let baseSeg = world.getSegment(player.z);
+        let basePercent = (player.z % CONFIG.SEGMENT_LENGTH) / CONFIG.SEGMENT_LENGTH;
+        
+        // Interpolate Y elevation for smooth camera vertical tracking
+        let nextSeg = world.getSegment(player.z + CONFIG.SEGMENT_LENGTH);
+        let interY = MATH.lerp(baseSeg.y, nextSeg.y, basePercent);
+
+        let camX = player.x * CONFIG.ROAD_WIDTH;
+        
+        // Camera Height = Base Elevation + Player Height + Head Bobbing + Base Offset
+        let bobAmount = Math.sin(player.headBob) * 50;
+        let camY = interY + CONFIG.CAMERA_HEIGHT + player.y + bobAmount;
+        let camZ = player.z;
+
+        // --- RENDER SKY & PARALLAX BACKGROUND ---
+        // Sky Gradient
+        let skyGrad = this.ctxSky.createLinearGradient(0, 0, 0, this.h);
+        skyGrad.addColorStop(0, CONFIG.COLORS.SKY_ZENITH);
+        skyGrad.addColorStop(1, CONFIG.COLORS.SKY_HORIZON);
+        this.ctxSky.fillStyle = skyGrad;
+        this.ctxSky.fillRect(0, 0, this.w, this.h);
+
+        // Horizon offset based on track curve
+        let horizonX = -(baseSeg.curve * 5000);
+        let horizonY = this.h/2 - (interY * 0.2); // Parallax Y
+
+        // Sun
+        this.ctxSky.fillStyle = CONFIG.COLORS.SUN;
+        this.ctxSky.beginPath(); this.ctxSky.arc(this.w * 0.7 + horizonX*0.1, horizonY - 200, 100, 0, MATH.PI2); this.ctxSky.fill();
+
+        // Distant Mountains
+        this.ctxSky.fillStyle = '#2A3C45';
+        this.ctxSky.beginPath(); this.ctxSky.moveTo(0, this.h);
+        for(let i=0; i<=this.w; i+=150) {
+            let mH = horizonY + Math.sin(i*0.01 + horizonX*0.005) * 200 + Math.cos(i*0.03)*100;
+            this.ctxSky.lineTo(i, mH);
+        }
+        this.ctxSky.lineTo(this.w, this.h); this.ctxSky.fill();
+
+        // --- CLEAR WORLD LAYER ---
+        this.ctxWorld.clearRect(0, 0, this.w, this.h);
+        
+        // Apply camera tilt (rolling into corners)
+        this.ctxWorld.save();
+        this.ctxWorld.translate(this.w/2, this.h/2);
+        this.ctxWorld.rotate(player.cameraTilt * Math.PI / 180);
+        this.ctxWorld.translate(-this.w/2, -this.h/2);
+
+        // --- RENDER PIPELINE ---
+        let dx = -(baseSeg.curve * basePercent);
+        let curX = 0;
+        let maxY = this.h; // Clipping plane (bottom up)
+        let spriteQueue = [];
+
+        // Traverse segments front-to-back
+        for (let n = 0; n < CONFIG.DRAW_DISTANCE; n++) {
+            let seg = world.getSegment(player.z + n * CONFIG.SEGMENT_LENGTH);
+            
+            // Handle looping Z values for projection
+            let loopOffset = 0;
+            if (player.z > seg.z) loopOffset = world.length;
+            
+            seg.p1.x = seg.x - curX;
+            seg.p1.y = seg.y;
+            seg.p1.z = seg.z + loopOffset;
+
+            let segNext = world.getSegment(player.z + (n+1) * CONFIG.SEGMENT_LENGTH);
+            seg.p2.x = segNext.x - curX - dx;
+            seg.p2.y = segNext.y;
+            seg.p2.z = segNext.z + loopOffset;
+
+            // Apply curve aggregation
+            curX += dx;
+            dx += segNext.curve;
+
+            // 3D Math Projection
+            seg.project(camX, camY, camZ, this.w, this.h);
+
+            // Frustum & Occlusion Culling
+            if (seg.p1.z <= CONFIG.FOV || seg.p2.sy >= maxY) continue;
+
+            // Determine rendering colors
+            let cBrick = seg.colorIndex === 0 ? CONFIG.COLORS.BRICK_LIGHT : CONFIG.COLORS.BRICK_DARK;
+            let cGrass = seg.colorIndex === 0 ? CONFIG.COLORS.GRASS_LIGHT : CONFIG.COLORS.GRASS_DARK;
+            
+            // Adjust colors based on distance to simulate fog
+            let fogRatio = MATH.clamp(seg.p1.z / (CONFIG.DRAW_DISTANCE * CONFIG.SEGMENT_LENGTH), 0, 1);
+            
+            // Draw Outside Environment (Grass)
+            this.drawPoly(this.ctxWorld, 0, seg.p2.sy, this.w, seg.p2.sy, this.w, seg.p1.sy, 0, seg.p1.sy, cGrass);
+
+            let w1 = seg.p1.w; let w2 = seg.p2.w;
+
+            // If Stairs, adjust rendering logic to draw steps
+            if (seg.isStairs) {
+                // Draw a vertical riser
+                this.drawPoly(this.ctxWorld, seg.p1.sx - w1, seg.p1.sy, seg.p1.sx + w1, seg.p1.sy,
+                                             seg.p1.sx + w1, seg.p1.sy + (seg.p1.scale*1000), seg.p1.sx - w1, seg.p1.sy + (seg.p1.scale*1000), CONFIG.COLORS.MORTAR);
+            }
+
+            // Draw The Wall Path (Stone Brick Floor)
+            this.drawPoly(this.ctxWorld, seg.p1.sx - w1, seg.p1.sy, seg.p1.sx + w1, seg.p1.sy,
+                                         seg.p2.sx + w2, seg.p2.sy, seg.p2.sx - w2, seg.p2.sy, cBrick);
+
+            // Draw Vertical Parapet Walls (The edges preventing falling off)
+            let parW1 = w1 * 0.15; let parW2 = w2 * 0.15; // Width of parapet
+            let parH1 = seg.p1.scale * 3000; let parH2 = seg.p2.scale * 3000; // Height of parapet
+            
+            // Left Parapet
+            this.drawPoly(this.ctxWorld, seg.p1.sx - w1 - parW1, seg.p1.sy - parH1, seg.p1.sx - w1, seg.p1.sy,
+                                         seg.p2.sx - w2, seg.p2.sy, seg.p2.sx - w2 - parW2, seg.p2.sy - parH2, CONFIG.COLORS.BRICK_DARK);
+            // Left Parapet Top
+            this.drawPoly(this.ctxWorld, seg.p1.sx - w1 - parW1*1.2, seg.p1.sy - parH1, seg.p1.sx - w1 + parW1*0.2, seg.p1.sy - parH1,
+                                         seg.p2.sx - w2 + parW2*0.2, seg.p2.sy - parH2, seg.p2.sx - w2 - parW2*1.2, seg.p2.sy - parH2, CONFIG.COLORS.WALL_TOP);
+
+            // Right Parapet
+            this.drawPoly(this.ctxWorld, seg.p1.sx + w1, seg.p1.sy, seg.p1.sx + w1 + parW1, seg.p1.sy - parH1,
+                                         seg.p2.sx + w2 + parW2, seg.p2.sy - parH2, seg.p2.sx + w2, seg.p2.sy, CONFIG.COLORS.BRICK_DARK);
+            // Right Parapet Top
+            this.drawPoly(this.ctxWorld, seg.p1.sx + w1 - parW1*0.2, seg.p1.sy - parH1, seg.p1.sx + w1 + parW1*1.2, seg.p1.sy - parH1,
+                                         seg.p2.sx + w2 + parW2*1.2, seg.p2.sy - parH2, seg.p2.sx + w2 - parW2*0.2, seg.p2.sy - parH2, CONFIG.COLORS.WALL_TOP);
+
+            // Render Fog Overlay per segment
+            if (fogRatio > 0.1) {
+                this.ctxWorld.fillStyle = `rgba(170, 188, 204, ${fogRatio})`;
+                this.ctxWorld.fillRect(0, seg.p2.sy, this.w, seg.p1.sy - seg.p2.sy);
+            }
+
+            // Update clipping plane to prevent drawing over front geometry
+            maxY = seg.p1.sy;
+
+            // Collect Sprites for depth sorting
+            for (let s of seg.sprites) {
+                spriteQueue.push({ seg: seg, sprite: s, fog: fogRatio });
+            }
+        }
+
+        // --- RENDER SPRITES (Back-to-Front Painter's Algorithm) ---
+        spriteQueue.sort((a, b) => b.seg.p1.z - a.seg.p1.z);
+        
+        for (let item of spriteQueue) {
+            let seg = item.seg;
+            let spr = item.sprite;
+            
+            let spriteX = seg.p1.sx + (spr.offset * seg.p1.w);
+            let spriteY = seg.p1.sy;
+            let scale = seg.p1.scale * this.w / 2; // Normalize scale to screen width
+            
+            spr.source(this.ctxWorld, spriteX, spriteY, scale);
+            
+            // Sprite fog occlusion
+            if (item.fog > 0.1) {
+                // Simplified bounds for fog overlay on sprite
+                let bbW = 2000 * scale; let bbH = 3000 * scale;
+                this.ctxWorld.fillStyle = `rgba(170, 188, 204, ${item.fog})`;
+                this.ctxWorld.fillRect(spriteX - bbW/2, spriteY - bbH, bbW, bbH);
+            }
+        }
+
+        this.ctxWorld.restore();
+
+        // Update UI
+        document.getElementById('health-fill').style.width = player.health + '%';
+        document.getElementById('stamina-fill').style.width = player.stamina + '%';
+        
+        // Color shifts based on state
+        document.getElementById('health-fill').style.backgroundColor = player.health < 30 ? 'red' : 'var(--health)';
+        document.getElementById('stamina-fill').style.backgroundColor = player.stamina < 20 ? 'red' : 'var(--stamina)';
+
+        document.getElementById('dist-readout').innerText = `DISTANCE: ${player.score.toString().padStart(5, '0')} m`;
+        document.getElementById('elev-readout').innerText = `ELEVATION: ${Math.floor(interY + 1200)} m`;
+        document.getElementById('pace-readout').innerText = `PACE: ${(player.velZ / 1000).toFixed(1)} m/s`;
+    }
 }
 
-const WEAPON_SYSTEMS = {
-    LASER: { dmg: 10, cooldown: 0.5, color: '#00ff00' },
-    PLASMA: { dmg: 25, cooldown: 1.2, color: '#0000ff' },
-    MISSILE: { dmg: 50, cooldown: 3.0, color: '#ff0000' }
+/**
+ * ============================================================================
+ * MAIN GAME STATE MACHINE & LOOP
+ * ============================================================================
+ */
+const Game = {
+    state: 'INIT',
+    lastTime: 0,
+    accumulator: 0,
+
+    init: function() {
+        this.world = new World();
+        this.player = new Runner();
+        this.renderer = new Renderer();
+        this.cinematic = new CinematicDirector(document.getElementById('layer-cinematic'));
+        
+        window.addEventListener('resize', () => {
+            this.renderer.resize();
+            this.cinematic.resize(window.innerWidth, window.innerHeight);
+        });
+
+        // UI Event Listeners
+        document.getElementById('btn-start').addEventListener('click', () => {
+            // Pointer lock for immersive control
+            document.body.requestPointerLock = document.body.requestPointerLock || document.body.mozRequestPointerLock;
+            document.body.requestPointerLock();
+            
+            this.changeState('PLAYING');
+            if(sfx.ctx.state === 'suspended') sfx.ctx.resume();
+        });
+
+        document.getElementById('btn-restart').addEventListener('click', () => {
+            this.changeState('MENU');
+        });
+
+        requestAnimationFrame((t) => this.loop(t));
+    },
+
+    changeState: function(newState) {
+        this.state = newState;
+        
+        document.getElementById('menu-main').style.display = 'none';
+        document.getElementById('menu-death').style.display = 'none';
+        document.getElementById('hud-top').style.display = 'none';
+        document.getElementById('reticle').style.display = 'none';
+
+        if(newState === 'MENU') {
+            document.getElementById('menu-main').style.display = 'flex';
+            this.world.build();
+            this.player.reset();
+            // Pre-render background
+            this.renderer.render(this.world, this.player);
+        }
+        else if(newState === 'PLAYING') {
+            document.getElementById('hud-top').style.display = 'flex';
+            document.getElementById('reticle').style.display = 'block';
+        }
+        else if(newState === 'GAME_OVER') {
+            document.exitPointerLock();
+            document.getElementById('menu-death').style.display = 'flex';
+            document.getElementById('death-stats').innerText = `TOTAL DISTANCE: ${this.player.score}M`;
+        }
+    },
+
+    loop: function(time) {
+        let dt = (time - this.lastTime) / 1000;
+        this.lastTime = time;
+        if (dt > 0.25) dt = 0.25; // Prevent death spirals
+
+        if (this.state === 'INIT') {
+            this.changeState('CINEMATIC');
+        }
+        else if (this.state === 'CINEMATIC') {
+            this.cinematic.updateAndRender(dt);
+        }
+        else if (this.state === 'MENU') {
+            // Idle camera sweep in menu
+            this.player.z += 100 * dt;
+            this.renderer.render(this.world, this.player);
+        }
+        else if (this.state === 'PLAYING') {
+            let seg = this.world.getSegment(this.player.z);
+            let nextSeg = this.world.getSegment(this.player.z + CONFIG.SEGMENT_LENGTH);
+            
+            this.player.update(dt, seg, nextSeg);
+            this.renderer.render(this.world, this.player);
+        }
+        else if (this.state === 'GAME_OVER') {
+            // Fall to ground effect
+            this.player.velZ *= 0.95;
+            this.player.z += this.player.velZ * dt;
+            this.player.y = MATH.lerp(this.player.y, -500, dt*5); // Head drops
+            this.renderer.render(this.world, this.player);
+        }
+
+        requestAnimationFrame((t) => this.loop(t));
+    }
 };
 
-const SHADER_VARS = {
-    ambientLight: [0.2, 0.2, 0.2],
-    directionalLight: [1.0, -1.0, 0.5],
-    specularIntensity: 0.8,
-    fogDensity: 0.05
-};
+// Bootstrap engine
+window.onload = () => Game.init();
 
-// Memory pre-allocation for high performance arrays
-let VBO = new Float32Array(10000 * 3);
-let IBO = new Uint16Array(10000 * 3);
-let CBO = new Float32Array(10000 * 4);
-
-console.log("Whittier Engine v2.0 Initialized. Architecture Loaded.");
 </script>
 </body>
 </html>
